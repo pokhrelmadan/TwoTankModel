@@ -1,0 +1,29 @@
+Package: TwoTankModel
+Title: Two-Tank Conceptual Rainfall-Runoff Model with Monte Carlo Calibration
+Version: 1.0.0
+Authors@R: person("Your Name", "Your Surname",
+                  email = "your.email@example.com",
+                  role = c("aut", "cre"))
+Description: A user-friendly two-tank linear-reservoir conceptual
+    rainfall-runoff model for daily streamflow simulation. Upper tank
+    represents surface runoff and interflow; lower tank represents
+    baseflow. Includes Monte Carlo calibration with Latin Hypercube
+    Sampling, prediction uncertainty envelopes, parameter identifiability
+    diagnostics, and publication-ready plots. Designed for comparative
+    watershed analysis under identical precipitation forcing.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends: R (>= 4.0.0)
+Imports:
+    deSolve,
+    lhs,
+    ggplot2,
+    gridExtra
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+LazyData: true
