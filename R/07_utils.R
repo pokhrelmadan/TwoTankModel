@@ -14,11 +14,34 @@
 #'
 #' @return List: dates, times, precip, Q_obs, n_days, units, area_km2.
 #' @export
+#' @param area_km2 Numeric. Catchment area.
+#' @param date_format Character. Date format. Default "auto" — tries common
+#'   formats automatically: "%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d".
+#'
+#' @return List: dates, times, precip, Q_obs, n_days, units, area_km2.
+#' @export
 load_data <- function(rainfall_file, discharge_file = NULL,
                       discharge_units = "m3s",
                       area_km2 = NULL,
-                      date_format = "%Y-%m-%d") {
+                      date_format = "auto") {
 
+  # Helper: parse dates trying common formats if "auto"
+  parse_dates <- function(x, fmt) {
+    if (fmt == "auto") {
+      formats_to_try <- c("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d",
+                          "%d-%m-%Y", "%m-%d-%Y")
+      for (f in formats_to_try) {
+        d <- as.Date(x, format = f)
+        if (sum(!is.na(d)) > 0.9 * length(x)) {
+          cat(sprintf("    Date format detected: %s\n", f))
+          return(d)
+        }
+      }
+      stop("Could not auto-detect date format. Set DATE_FORMAT in config.R, e.g. '%m/%d/%Y'")
+    } else {
+      as.Date(x, format = fmt)
+    }
+  }
   cat("\n  Loading data...\n")
 
   if (!file.exists(rainfall_file))
@@ -35,12 +58,13 @@ load_data <- function(rainfall_file, discharge_file = NULL,
   if (is.na(p_col)) stop("No precipitation column in ", rainfall_file)
   p_col <- names(rain_df)[tolower(names(rain_df)) == p_col]
 
-  dates  <- as.Date(rain_df[[date_col]], format = date_format)
+  dates  <- parse_dates(rain_df[[date_col]], date_format)
   precip <- as.numeric(rain_df[[p_col]])
   n_days <- length(dates)
   times  <- 0:(n_days - 1)
 
-  if (any(is.na(dates))) stop("Could not parse dates. Check date_format.")
+  if (any(is.na(dates))) stop("Could not parse all dates. ",
+			      sum(is.na(dates)), " NA dates found.")
   precip[is.na(precip)] <- 0
   precip[precip < 0]    <- 0
 

@@ -31,6 +31,13 @@ DISCHARGE_UNITS <- "m3s"
 #   Set to NULL if DISCHARGE_UNITS = "mm_day".
 CATCHMENT_AREA_KM2 <- 150
 
+# Date format in your CSV files
+#   Use "auto" to auto-detect (tries common formats)
+#   Or specify explicitly:
+#     "%Y-%m-%d"  for 2024-01-15
+#     "%m/%d/%Y"  for 1/15/2024   (US format)
+#     "%d/%m/%Y"  for 15/1/2024   (European format)
+DATE_FORMAT <- "auto"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2. CALIBRATION SETTINGS

@@ -56,6 +56,7 @@ run_model <- function(config_file = "config.R") {
   if (!exists("SAVE_CSV_RESULTS",   envir = cfg))  cfg$SAVE_CSV_RESULTS   <- TRUE
   if (!exists("SAVE_PARAMETERS",    envir = cfg))  cfg$SAVE_PARAMETERS    <- TRUE
   if (!exists("SAVE_CONFIG_COPY",   envir = cfg))  cfg$SAVE_CONFIG_COPY   <- TRUE
+  if (!exists("DATE_FORMAT",        envir = cfg))  cfg$DATE_FORMAT        <- "auto"
   if (!exists("RANDOM_SEED",        envir = cfg))  cfg$RANDOM_SEED        <- 42
   if (!exists("VERBOSE",            envir = cfg))  cfg$VERBOSE            <- TRUE
 
@@ -82,7 +83,8 @@ run_model <- function(config_file = "config.R") {
     rainfall_file   = cfg$RAINFALL_FILE,
     discharge_file  = cfg$DISCHARGE_FILE,
     discharge_units = cfg$DISCHARGE_UNITS,
-    area_km2        = cfg$CATCHMENT_AREA_KM2
+    area_km2        = cfg$CATCHMENT_AREA_KM2,
+    date_format     = cfg$DATE_FORMAT
   )
 
   # ── Step 3: Calibration ──
@@ -216,6 +218,7 @@ config_template_text <- function() {
 RAINFALL_FILE      <- "data/rainfall.csv"      # columns: date, P
 DISCHARGE_FILE     <- "data/discharge.csv"     # columns: date, Q
 DISCHARGE_UNITS    <- "m3s"                    # "m3s" or "mm_day"
+DATE_FORMAT        <- "auto"                   # example "%m/%d/%Y" 
 CATCHMENT_AREA_KM2 <- 150                      # required if m3s
 
 # ── Calibration ──
