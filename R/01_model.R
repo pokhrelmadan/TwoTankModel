@@ -1,20 +1,4 @@
 #' @title Two-Tank Model Core Engine
-#' @description Core ODE system and simulation runner for the two-tank
-#'   conceptual rainfall-runoff model.
-#'
-#' @details
-#' The model consists of two vertically connected linear reservoirs:
-#' \itemize{
-#'   \item Upper tank: surface and interflow (drains via k1, percolates via k2)
-#'   \item Lower tank: baseflow (drains via k3)
-#' }
-#'
-#' Governing equations:
-#' \deqn{dS1/dt = P(t) - k1 \cdot S1(t) - k2 \cdot S1(t)}
-#' \deqn{dS2/dt = k2 \cdot S1(t) - k3 \cdot S2(t)}
-#' \deqn{Q(t) = k1 \cdot S1(t) + k3 \cdot S2(t)}
-
-# ── Internal ODE function (not exported) ────────────────────────────────────
 
 two_tank_ode <- function(t, state, pars, precip_fun) {
   S1 <- max(state["S1"], 0)
@@ -22,119 +6,83 @@ two_tank_ode <- function(t, state, pars, precip_fun) {
   P  <- precip_fun(t)
   Q1 <- pars["k1"] * S1
   Q2 <- pars["k3"] * S2
-
   dS1 <- P - Q1 - pars["k2"] * S1
   dS2 <- pars["k2"] * S1 - Q2
-
   list(c(dS1 = dS1, dS2 = dS2),
        Q1 = Q1, Q2 = Q2, Q_total = Q1 + Q2, P = P)
 }
 
-
 #' Run the Two-Tank Model
 #'
 #' Simulates daily discharge using the two-tank linear reservoir model.
-#' This is the main simulation function — give it parameters and rainfall,
-#' and it returns a complete daily time series.
+#' When \code{area_km2} is provided, the output includes m³/s columns.
 #'
-#' @param k1 Numeric. Surface runoff coefficient \[1/day\].
-#'   Higher k1 = faster surface response (e.g., urban: 0.3, forest: 0.08).
-#' @param k2 Numeric. Percolation coefficient \[1/day\].
-#'   Higher k2 = more water moves to the lower tank.
-#' @param k3 Numeric. Baseflow coefficient \[1/day\].
-#'   Higher k3 = faster baseflow recession.
-#' @param times Numeric vector. Time steps (typically 0, 1, 2, ... n_days-1).
-#' @param precip_vec Numeric vector. Daily precipitation \[mm/day\],
-#'   same length as \code{times}.
-#' @param S1_0 Numeric. Initial storage in upper tank \[mm\]. Default 0.
-#' @param S2_0 Numeric. Initial storage in lower tank \[mm\]. Default 0.
+#' @param k1,k2,k3 Numeric. Parameters \[1/day\].
+#' @param times Numeric vector. Time steps.
+#' @param precip_vec Numeric vector. Daily precipitation \[mm/day\].
+#' @param S1_0,S2_0 Numeric. Initial tank storage \[mm\]. Default 0.
+#' @param area_km2 Numeric. Catchment area in km². Default NULL.
 #'
-#' @return A data.frame with columns:
-#'   \describe{
-#'     \item{time}{Time step index (0, 1, 2, ...)}
-#'     \item{S1}{Upper tank storage \[mm\]}
-#'     \item{S2}{Lower tank storage \[mm\]}
-#'     \item{Q1}{Surface runoff \[mm/day\]}
-#'     \item{Q2}{Baseflow \[mm/day\]}
-#'     \item{Q_total}{Total discharge Q1 + Q2 \[mm/day\]}
-#'     \item{P}{Precipitation at each time step \[mm/day\]}
-#'   }
-#'
-#' @examples
-#' # Simple 1-year simulation
-#' times  <- 0:364
-#' precip <- c(rep(0, 50), rep(10, 20), rep(0, 295))
-#' sim    <- run_two_tank(k1 = 0.3, k2 = 0.1, k3 = 0.02, times, precip)
-#' plot(sim$time, sim$Q_total, type = "l", xlab = "Day", ylab = "Q (mm/day)")
+#' @return Data.frame with simulation results in mm/day. If
+#'   \code{area_km2} is provided, also includes Q1_m3s, Q2_m3s, Q_total_m3s.
 #'
 #' @importFrom deSolve ode
 #' @export
 run_two_tank <- function(k1, k2, k3, times, precip_vec,
-                         S1_0 = 0, S2_0 = 0) {
+                         S1_0 = 0, S2_0 = 0, area_km2 = NULL) {
 
-  # ── Friendly input validation ──
-  if (!is.numeric(k1) || !is.numeric(k2) || !is.numeric(k3)) {
-    stop("Parameters k1, k2, k3 must be numeric values.")
-  }
-  if (k1 <= 0 || k2 <= 0 || k3 <= 0) {
-    stop("Parameters k1, k2, k3 must be positive (> 0).\n",
-         "  You provided: k1=", k1, "  k2=", k2, "  k3=", k3)
-  }
-  if (length(times) != length(precip_vec)) {
-    stop("'times' and 'precip_vec' must have the same length.\n",
-         "  times has ", length(times), " elements, ",
-         "precip_vec has ", length(precip_vec), " elements.")
-  }
-  if (any(precip_vec < 0)) {
-    n_neg <- sum(precip_vec < 0)
-    stop("Precipitation cannot be negative.\n",
-         "  Found ", n_neg, " negative value(s) in precip_vec.")
-  }
+  if (!is.numeric(k1) || !is.numeric(k2) || !is.numeric(k3))
+    stop("Parameters k1, k2, k3 must be numeric.")
+  if (k1 <= 0 || k2 <= 0 || k3 <= 0)
+    stop("Parameters must be positive. Got: k1=", k1, " k2=", k2, " k3=", k3)
+  if (length(times) != length(precip_vec))
+    stop("times and precip_vec must have equal length.")
+  if (any(precip_vec < 0)) stop("Precipitation cannot be negative.")
 
   precip_fun <- approxfun(times, precip_vec, method = "constant", rule = 2)
   pars  <- c(k1 = k1, k2 = k2, k3 = k3)
   state <- c(S1 = S1_0, S2 = S2_0)
 
-  out <- deSolve::ode(
-    y      = state,
-    times  = times,
-    func   = two_tank_ode,
-    parms  = pars,
-    precip_fun = precip_fun,
-    method = "lsoda"
-  )
+  out <- deSolve::ode(y = state, times = times, func = two_tank_ode,
+                     parms = pars, precip_fun = precip_fun, method = "lsoda")
 
   df <- as.data.frame(out)
   names(df) <- c("time", "S1", "S2", "Q1", "Q2", "Q_total", "P")
+
+  if (!is.null(area_km2)) {
+    df$Q1_m3s      <- mmday_to_m3s(df$Q1, area_km2)
+    df$Q2_m3s      <- mmday_to_m3s(df$Q2, area_km2)
+    df$Q_total_m3s <- mmday_to_m3s(df$Q_total, area_km2)
+  }
   return(df)
 }
 
 
 #' Print Model Summary
-#'
-#' Prints a human-readable summary of a two-tank simulation result.
-#'
 #' @param sim Data.frame. Output from \code{\link{run_two_tank}}.
-#' @param label Character. Name to display. Default "Simulation".
-#'
+#' @param label Character. Name to display.
+#' @param units Character. "mm" or "m3s". Default "mm".
 #' @export
-print_model_summary <- function(sim, label = "Simulation") {
+print_model_summary <- function(sim, label = "Simulation", units = "mm") {
+  if (units == "m3s" && !"Q_total_m3s" %in% names(sim)) {
+    warning("No m3s columns found. Using mm/day.")
+    units <- "mm"
+  }
+  Q  <- if (units == "m3s") sim$Q_total_m3s else sim$Q_total
+  Q1 <- if (units == "m3s") sim$Q1_m3s      else sim$Q1
+  Q2 <- if (units == "m3s") sim$Q2_m3s      else sim$Q2
+  u  <- if (units == "m3s") "m³/s" else "mm/day"
 
-  n <- nrow(sim)
-  cat("\n")
-  cat("  ╔══════════════════════════════════════════════╗\n")
-  cat(sprintf("  ║  %s  — Model Summary\n", label))
-  cat("  ╠══════════════════════════════════════════════╣\n")
-  cat(sprintf("  ║  Duration           : %d days\n", n))
+  cat("\n  ╔══════════════════════════════════════════════════════╗\n")
+  cat(sprintf("  ║  %s — Summary\n", label))
+  cat("  ╠══════════════════════════════════════════════════════╣\n")
+  cat(sprintf("  ║  Duration           : %d days\n", nrow(sim)))
   cat(sprintf("  ║  Total rainfall     : %.1f mm\n", sum(sim$P)))
-  cat(sprintf("  ║  Total discharge    : %.1f mm\n", sum(sim$Q_total)))
-  cat(sprintf("  ║  Peak discharge     : %.2f mm/day (day %d)\n",
-              max(sim$Q_total), which.max(sim$Q_total) - 1))
-  cat(sprintf("  ║  Peak surface (Q1)  : %.2f mm/day\n", max(sim$Q1)))
-  cat(sprintf("  ║  Peak baseflow (Q2) : %.2f mm/day\n", max(sim$Q2)))
-  cat(sprintf("  ║  Baseflow index     : %.1f %%\n",
-              sum(sim$Q2) / sum(sim$Q_total) * 100))
-  cat(sprintf("  ║  Runoff coefficient : %.3f\n",
-              sum(sim$Q_total) / sum(sim$P)))
-  cat("  ╚══════════════════════════════════════════════╝\n\n")
+  cat(sprintf("  ║  Peak discharge     : %.3f %s (day %d)\n",
+              max(Q), u, which.max(Q) - 1))
+  cat(sprintf("  ║  Peak Q1 (surface)  : %.3f %s\n", max(Q1), u))
+  cat(sprintf("  ║  Peak Q2 (baseflow) : %.3f %s\n", max(Q2), u))
+  cat(sprintf("  ║  Baseflow index     : %.1f %%\n", sum(Q2)/sum(Q)*100))
+  cat(sprintf("  ║  Runoff coefficient : %.3f\n", sum(sim$Q_total)/sum(sim$P)))
+  cat("  ╚══════════════════════════════════════════════════════╝\n\n")
 }
