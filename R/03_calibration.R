@@ -108,6 +108,13 @@ calibrate_montecarlo <- function(times, precip_vec, Q_obs,
       sim_i <- run_two_tank(p[1], p[2], p[3], times, precip_vec,
                             area_km2 = area_km2)
       Q_sim <- if (!is.null(area_km2)) sim_i$Q_total_m3s else sim_i$Q_total
+ 
+      # Handle failed simulations
+      if (any(is.na(Q_sim))) {
+        return(c(NSE = -Inf, KGE = -Inf, LogNSE = -Inf,
+                 RMSE = Inf, PBIAS = NA, Peak_Q = NA, Vol_Q = NA))
+      }
+ 
       c(NSE    = calc_nse(Q_obs, Q_sim),
         KGE    = calc_kge(Q_obs, Q_sim),
         LogNSE = calc_lognse(Q_obs, Q_sim),
@@ -216,6 +223,18 @@ calibrate_montecarlo <- function(times, precip_vec, Q_obs,
       sim_i <- run_two_tank(samples$k1[i], samples$k2[i], samples$k3[i],
                             times, precip_vec, area_km2 = area_km2)
       Q_sim <- if (!is.null(area_km2)) sim_i$Q_total_m3s else sim_i$Q_total
+ 
+      # Skip failed simulations
+      if (any(is.na(Q_sim))) {
+        samples$NSE[i]    <- -Inf
+        samples$KGE[i]    <- -Inf
+        samples$LogNSE[i] <- -Inf
+        samples$RMSE[i]   <- Inf
+        samples$PBIAS[i]  <- NA
+        samples$Peak_Q[i] <- NA
+        samples$Vol_Q[i]  <- NA
+        next
+      }
  
       samples$NSE[i]    <- calc_nse(Q_obs, Q_sim)
       samples$KGE[i]    <- calc_kge(Q_obs, Q_sim)
