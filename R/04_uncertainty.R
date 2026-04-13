@@ -1,5 +1,5 @@
 #' @title Uncertainty Analysis
-
+ 
 #' Analyse Parameter Uncertainty
 #'
 #' Identifies behavioural parameter sets (NSE >= threshold) and
@@ -20,16 +20,16 @@ extract_uncertainty <- function(cal_result, times, precip_vec, Q_obs,
                                 nse_threshold = 0.5,
                                 max_behavioural = 500,
                                 verbose = TRUE) {
-
+ 
   samples  <- cal_result$samples
   area_km2 <- cal_result$area_km2
   n_days   <- length(times)
-
+ 
   behav   <- samples[samples$NSE >= nse_threshold, ]
   behav   <- behav[order(-behav$NSE), ]
   n_behav <- nrow(behav)
   pct     <- round(n_behav / nrow(samples) * 100, 1)
-
+ 
   param_ranges <- data.frame(
     parameter = c("k1 (surface runoff)", "k2 (percolation)", "k3 (baseflow)"),
     min   = round(c(min(behav$k1), min(behav$k2), min(behav$k3)), 4),
@@ -39,7 +39,7 @@ extract_uncertainty <- function(cal_result, times, precip_vec, Q_obs,
                     max(behav$k3) - min(behav$k3)), 4),
     stringsAsFactors = FALSE
   )
-
+ 
   if (verbose) {
     cat("\n  ╔══════════════════════════════════════════════════════╗\n")
     cat("  ║          UNCERTAINTY ANALYSIS                       ║\n")
@@ -53,28 +53,61 @@ extract_uncertainty <- function(cal_result, times, precip_vec, Q_obs,
                   param_ranges$parameter[i], param_ranges$min[i],
                   param_ranges$max[i]))
   }
-
+ 
   n_run <- min(n_behav, max_behavioural)
   if (verbose) cat(sprintf("  ║  Computing envelope (%d sims)...\n", n_run))
-
+ 
   Q_ensemble <- matrix(NA, nrow = n_days, ncol = n_run)
-  for (b in 1:n_run) {
-    sim_b <- run_two_tank(behav$k1[b], behav$k2[b], behav$k3[b],
-                          times, precip_vec, area_km2 = area_km2)
-    Q_ensemble[, b] <- if (!is.null(area_km2)) sim_b$Q_total_m3s else sim_b$Q_total
+ 
+  # Use parallel if we have enough sims and multiple cores
+  n_cores <- max(1, parallel::detectCores(logical = FALSE) - 1)
+  if (n_cores > 1 && n_run >= 50) {
+    param_list <- lapply(1:n_run, function(b) {
+      c(behav$k1[b], behav$k2[b], behav$k3[b])
+    })
+ 
+    worker_fun <- function(p, times, precip_vec, area_km2) {
+      sim_b <- run_two_tank(p[1], p[2], p[3], times, precip_vec,
+                            area_km2 = area_km2)
+      if (!is.null(area_km2)) sim_b$Q_total_m3s else sim_b$Q_total
+    }
+ 
+    if (.Platform$OS.type == "windows") {
+      cl <- parallel::makeCluster(n_cores)
+      on.exit(parallel::stopCluster(cl), add = TRUE)
+      parallel::clusterExport(cl,
+        c("run_two_tank", "two_tank_ode", "mmday_to_m3s"),
+        envir = environment())
+      parallel::clusterEvalQ(cl, library(deSolve))
+      results <- parallel::parLapply(cl, param_list, worker_fun,
+                                     times = times, precip_vec = precip_vec,
+                                     area_km2 = area_km2)
+    } else {
+      results <- parallel::mclapply(param_list, worker_fun,
+                                    times = times, precip_vec = precip_vec,
+                                    area_km2 = area_km2,
+                                    mc.cores = n_cores)
+    }
+    for (b in 1:n_run) Q_ensemble[, b] <- results[[b]]
+  } else {
+    for (b in 1:n_run) {
+      sim_b <- run_two_tank(behav$k1[b], behav$k2[b], behav$k3[b],
+                            times, precip_vec, area_km2 = area_km2)
+      Q_ensemble[, b] <- if (!is.null(area_km2)) sim_b$Q_total_m3s else sim_b$Q_total
+    }
   }
-
+ 
   Q_lower  <- apply(Q_ensemble, 1, quantile, probs = 0.05)
   Q_upper  <- apply(Q_ensemble, 1, quantile, probs = 0.95)
   Q_median <- apply(Q_ensemble, 1, median)
-
+ 
   containment <- sum(Q_obs >= Q_lower & Q_obs <= Q_upper) / n_days * 100
-
+ 
   if (verbose) {
     cat(sprintf("  ║  Containment (90%%): %.1f%%\n", containment))
     cat("  ╚══════════════════════════════════════════════════════╝\n\n")
   }
-
+ 
   return(list(
     behavioural     = behav,
     n_behavioural   = n_behav,
