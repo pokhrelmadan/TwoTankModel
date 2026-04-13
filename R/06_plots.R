@@ -1,10 +1,10 @@
 #' @title Visualisation Functions
 #' @description Publication-ready plots for the two-tank model including
 #'   hydrographs, uncertainty envelopes, diagnostics, and analysis.
-
-
+ 
+ 
 # ── Shared theme ─────────────────────────────────────────────────────────────
-
+ 
 theme_hydro <- function(base_size = 11) {
   ggplot2::theme_bw(base_size = base_size) +
     ggplot2::theme(
@@ -15,8 +15,30 @@ theme_hydro <- function(base_size = 11) {
       axis.text.x      = ggplot2::element_text(angle = 45, hjust = 1)
     )
 }
-
-
+ 
+ 
+# ── Smart date-axis scaling based on data length ───────────────────────────
+#   Picks reasonable tick intervals and label formats to avoid cramming.
+smart_date_scale <- function(dates) {
+  n_days  <- length(dates)
+  n_years <- as.numeric(diff(range(dates))) / 365.25
+ 
+  if (n_years <= 1) {
+    breaks <- "1 month";   labels <- "%b"
+  } else if (n_years <= 3) {
+    breaks <- "3 months";  labels <- "%b %Y"
+  } else if (n_years <= 10) {
+    breaks <- "1 year";    labels <- "%Y"
+  } else if (n_years <= 25) {
+    breaks <- "2 years";   labels <- "%Y"
+  } else {
+    breaks <- "5 years";   labels <- "%Y"
+  }
+ 
+  ggplot2::scale_x_date(date_breaks = breaks, date_labels = labels)
+}
+ 
+ 
 #' Plot Daily Rainfall Hyetograph
 #'
 #' @param dates Date vector.
@@ -28,12 +50,12 @@ plot_rainfall <- function(dates, precip) {
   ggplot2::ggplot(df, ggplot2::aes(date, P)) +
     ggplot2::geom_bar(stat = "identity", fill = "steelblue", width = 1) +
     ggplot2::scale_y_reverse(expand = ggplot2::expansion(mult = c(0.05, 0))) +
-    ggplot2::scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+    smart_date_scale(dates) +
     ggplot2::labs(title = "Daily Precipitation", x = NULL, y = "P (mm/day)") +
     theme_hydro()
 }
-
-
+ 
+ 
 #' Plot Observed vs Simulated Hydrograph
 #'
 #' @param dates Date vector.
@@ -53,13 +75,13 @@ plot_hydrograph <- function(dates, Q_obs, sim, nse = NULL) {
     ggplot2::geom_line(linewidth = 0.6) +
     ggplot2::scale_colour_manual(values = c("Observed" = "black",
                                              "Simulated" = "red")) +
-    ggplot2::scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+    smart_date_scale(dates) +
     ggplot2::labs(title = sprintf("Observed vs Simulated (NSE = %.4f)", nse),
                   x = NULL, y = "Q (mm/day)", colour = NULL) +
     theme_hydro()
 }
-
-
+ 
+ 
 #' Plot Uncertainty Envelope
 #'
 #' @param dates Date vector.
@@ -87,7 +109,7 @@ plot_uncertainty_envelope <- function(dates, Q_obs, sim, uncertainty) {
     ggplot2::scale_colour_manual(values = c("Observed" = "black",
                                              "Best (MC)" = "red",
                                              "Median (MC)" = "blue")) +
-    ggplot2::scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+    smart_date_scale(dates) +
     ggplot2::labs(
       title = "Hydrograph with 90% Prediction Uncertainty Envelope",
       subtitle = sprintf("%.1f%% of observations within bounds | %d behavioural sets",
@@ -96,8 +118,8 @@ plot_uncertainty_envelope <- function(dates, Q_obs, sim, uncertainty) {
     ) +
     theme_hydro()
 }
-
-
+ 
+ 
 #' Plot Observed vs Simulated Scatter
 #'
 #' @param Q_obs Numeric vector. Observed discharge.
@@ -116,8 +138,8 @@ plot_scatter <- function(Q_obs, sim) {
     ggplot2::coord_equal() +
     theme_hydro()
 }
-
-
+ 
+ 
 #' Plot Flow Components (Stacked Area)
 #'
 #' @param dates Date vector.
@@ -135,13 +157,13 @@ plot_components <- function(dates, sim) {
     ggplot2::geom_area(alpha = 0.7, position = "stack") +
     ggplot2::scale_fill_manual(values = c("Q1 Surface Runoff" = "tomato",
                                            "Q2 Baseflow" = "dodgerblue3")) +
-    ggplot2::scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+    smart_date_scale(dates) +
     ggplot2::labs(title = sprintf("Flow Components (BFI = %.1f%%)", bfi),
                   x = NULL, y = "Q (mm/day)") +
     theme_hydro()
 }
-
-
+ 
+ 
 #' Plot Tank Storage Dynamics
 #'
 #' @param dates Date vector.
@@ -158,13 +180,13 @@ plot_storage <- function(dates, sim) {
     ggplot2::geom_line(linewidth = 0.7) +
     ggplot2::scale_colour_manual(values = c("S1 Upper Tank" = "orange",
                                              "S2 Lower Tank" = "purple")) +
-    ggplot2::scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+    smart_date_scale(dates) +
     ggplot2::labs(title = "Tank Storage Dynamics",
                   x = NULL, y = "Storage (mm)") +
     theme_hydro()
 }
-
-
+ 
+ 
 #' Plot Dotty Plots for Parameter Identifiability
 #'
 #' @param cal_result List. Output from \code{\link{calibrate_montecarlo}}.
@@ -190,8 +212,8 @@ plot_dotty <- function(cal_result, nse_threshold = 0.5) {
     ) +
     theme_hydro()
 }
-
-
+ 
+ 
 #' Plot NSE Distribution Histogram
 #'
 #' @param cal_result List. Output from \code{\link{calibrate_montecarlo}}.
@@ -215,8 +237,8 @@ plot_nse_histogram <- function(cal_result, nse_threshold = 0.5) {
     ) +
     theme_hydro()
 }
-
-
+ 
+ 
 #' Plot Parameter Correlation (Behavioural Sets)
 #'
 #' @param uncertainty List. Output from \code{\link{extract_uncertainty}}.
@@ -239,8 +261,8 @@ plot_param_correlation <- function(uncertainty, x_param = "k1", y_param = "k2") 
     ) +
     theme_hydro()
 }
-
-
+ 
+ 
 #' Plot Flow Duration Curve
 #'
 #' @param Q_obs Numeric vector. Observed discharge.
@@ -252,7 +274,7 @@ plot_flow_duration <- function(Q_obs, sim) {
   fdc_obs <- sort(Q_obs, decreasing = TRUE)
   fdc_sim <- sort(sim$Q_total, decreasing = TRUE)
   exceed  <- (1:n) / n * 100
-
+ 
   df <- data.frame(
     Exceedance = rep(exceed, 2),
     Q      = c(fdc_obs, fdc_sim),
@@ -268,8 +290,8 @@ plot_flow_duration <- function(Q_obs, sim) {
                   y = "Q (mm/day, log scale)") +
     theme_hydro()
 }
-
-
+ 
+ 
 #' Generate All Plots and Save to PDF
 #'
 #' Creates a multi-page PDF with all diagnostic plots and also
@@ -287,9 +309,9 @@ plot_flow_duration <- function(Q_obs, sim) {
 #' @export
 plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
                      output_dir = ".", prefix = "twotank") {
-
+ 
   sim <- cal_result$best_sim
-
+ 
   p1  <- plot_rainfall(dates, precip)
   p2  <- plot_uncertainty_envelope(dates, Q_obs, sim, uncertainty)
   p3  <- plot_hydrograph(dates, Q_obs, sim)
@@ -302,7 +324,7 @@ plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
   p10 <- plot_param_correlation(uncertainty, "k1", "k3")
   p11 <- plot_param_correlation(uncertainty, "k2", "k3")
   p12 <- plot_flow_duration(Q_obs, sim)
-
+ 
   # Save combined PDF
   pdf_path <- file.path(output_dir, paste0(prefix, "_results.pdf"))
   grDevices::pdf(pdf_path, width = 12, height = 28)
@@ -310,7 +332,7 @@ plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
                            ncol = 1,
                            heights = c(0.7, 1.2, 1, 1, 1, 1, 1, 0.8, 1))
   grDevices::dev.off()
-
+ 
   # Save individual PNGs
   ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_rainfall.png")),
                   p1, width = 12, height = 3, dpi = 150)
@@ -336,9 +358,9 @@ plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
                   p11, width = 7, height = 6, dpi = 150)
   ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_fdc.png")),
                   p12, width = 10, height = 5, dpi = 150)
-
+ 
   cat(sprintf("  Saved: %s + 12 PNGs in %s\n", basename(pdf_path), output_dir))
-
+ 
   invisible(list(rainfall = p1, envelope = p2, hydrograph = p3,
                  scatter = p4, components = p5, storage = p6,
                  dotty = p7, nse_hist = p8,
