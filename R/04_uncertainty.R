@@ -30,6 +30,35 @@ extract_uncertainty <- function(cal_result, times, precip_vec, Q_obs,
   n_behav <- nrow(behav)
   pct     <- round(n_behav / nrow(samples) * 100, 1)
  
+  # ── Adaptive threshold fallback ──
+  # If no sets pass the threshold, use the top 5% of samples instead
+  # so the user still gets uncertainty bounds (just wider ones).
+  adaptive_threshold <- nse_threshold
+  used_adaptive <- FALSE
+  if (n_behav == 0) {
+    used_adaptive <- TRUE
+    cutoff_quantile <- quantile(samples$NSE, 0.95, na.rm = TRUE)
+    behav <- samples[samples$NSE >= cutoff_quantile, ]
+    behav <- behav[order(-behav$NSE), ]
+    n_behav <- nrow(behav)
+    adaptive_threshold <- cutoff_quantile
+ 
+    if (verbose) {
+      cat("\n  ⚠ WARNING: No samples passed NSE >= ",
+          sprintf("%.2f", nse_threshold), "\n", sep = "")
+      cat("    The calibrated model has poor fit (best NSE = ",
+          sprintf("%.4f", max(samples$NSE, na.rm = TRUE)), ")\n", sep = "")
+      cat("    Using top 5%% of samples for uncertainty bounds instead\n")
+      cat("    (adaptive threshold: NSE >= ",
+          sprintf("%.4f", cutoff_quantile), ")\n\n", sep = "")
+      cat("    Possible issues to check:\n")
+      cat("    - Catchment area (unit conversion depends on it)\n")
+      cat("    - Date alignment between rainfall and discharge files\n")
+      cat("    - Missing processes (evapotranspiration, snowmelt)\n")
+      cat("    - Parameter bounds may be too restrictive\n\n")
+    }
+  }
+ 
   param_ranges <- data.frame(
     parameter = c("k1 (surface runoff)", "k2 (percolation)", "k3 (baseflow)"),
     min   = round(c(min(behav$k1), min(behav$k2), min(behav$k3)), 4),
@@ -44,7 +73,12 @@ extract_uncertainty <- function(cal_result, times, precip_vec, Q_obs,
     cat("\n  ╔══════════════════════════════════════════════════════╗\n")
     cat("  ║          UNCERTAINTY ANALYSIS                       ║\n")
     cat("  ╠══════════════════════════════════════════════════════╣\n")
-    cat(sprintf("  ║  Threshold      : NSE >= %.2f\n", nse_threshold))
+    if (used_adaptive) {
+      cat(sprintf("  ║  Threshold      : adaptive (top 5%%, NSE >= %.4f)\n",
+                  adaptive_threshold))
+    } else {
+      cat(sprintf("  ║  Threshold      : NSE >= %.2f\n", nse_threshold))
+    }
     cat(sprintf("  ║  Behavioural    : %d of %d (%s%%)\n",
                 n_behav, nrow(samples), pct))
     cat("  ║  Parameter uncertainty ranges:\n")
