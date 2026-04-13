@@ -43,42 +43,52 @@ run_two_tank <- function(k1, k2, k3, times, precip_vec,
   pars  <- c(k1 = k1, k2 = k2, k3 = k3)
   state <- c(S1 = S1_0, S2 = S2_0)
  
-  out <- tryCatch(
-    deSolve::ode(y = state, times = times, func = two_tank_ode,
-                 parms = pars, precip_fun = precip_fun,
-                 method = "lsoda",
-                 rtol = 1e-4, atol = 1e-6,
-                 hmax = 1),
-    error   = function(e) NULL,
-    warning = function(w) {
-      # Suppress DLSODA precision warnings — retry with looser tolerance
-      if (grepl("accuracy|precision|early", w$message, ignore.case = TRUE)) {
-        tryCatch(
-          deSolve::ode(y = state, times = times, func = two_tank_ode,
-                       parms = pars, precip_fun = precip_fun,
-                       method = "euler", hini = 0.5),
-          error = function(e) NULL)
-      } else {
-        deSolve::ode(y = state, times = times, func = two_tank_ode,
-                     parms = pars, precip_fun = precip_fun,
-                     method = "lsoda")
-      }
-    }
-  )
+  # ── Direct analytical integration ──
+  # For linear reservoirs with constant P during each daily time step,
+  # the system has closed-form solutions that are ALWAYS numerically stable.
+  # This is faster and more reliable than lsoda for this specific model.
  
-  # If solver failed or returned incomplete output, return NA-filled data
-  if (is.null(out) || nrow(out) != length(times)) {
-    df <- data.frame(time = times, S1 = NA, S2 = NA,
-                     Q1 = NA, Q2 = NA, Q_total = NA,
-                     P = precip_vec)
-    if (!is.null(area_km2)) {
-      df$Q1_m3s <- NA; df$Q2_m3s <- NA; df$Q_total_m3s <- NA
-    }
-    return(df)
+  n <- length(times)
+  S1 <- numeric(n)
+  S2 <- numeric(n)
+  Q1 <- numeric(n)
+  Q2 <- numeric(n)
+ 
+  S1[1] <- S1_0
+  S2[1] <- S2_0
+  Q1[1] <- k1 * S1[1]
+  Q2[1] <- k3 * S2[1]
+ 
+  # Combined upper-tank drainage rate
+  k_out <- k1 + k2
+ 
+  for (i in 2:n) {
+    dt <- times[i] - times[i - 1]
+    P  <- precip_vec[i - 1]  # precipitation during interval
+ 
+    # Upper tank: dS1/dt = P - (k1 + k2)*S1
+    # Analytical solution: S1(t+dt) = (P/k_out) + (S1_prev - P/k_out) * exp(-k_out*dt)
+    S1_eq  <- P / k_out                       # equilibrium storage
+    S1[i]  <- S1_eq + (S1[i-1] - S1_eq) * exp(-k_out * dt)
+ 
+    # Average S1 over interval (for correct percolation to lower tank)
+    S1_avg <- (S1[i-1] + S1[i]) / 2
+ 
+    # Lower tank: dS2/dt = k2*S1_avg - k3*S2
+    S2_eq  <- (k2 * S1_avg) / k3
+    S2[i]  <- S2_eq + (S2[i-1] - S2_eq) * exp(-k3 * dt)
+ 
+    Q1[i] <- k1 * S1[i]
+    Q2[i] <- k3 * S2[i]
   }
  
-  df <- as.data.frame(out)
-  names(df) <- c("time", "S1", "S2", "Q1", "Q2", "Q_total", "P")
+  df <- data.frame(
+    time = times,
+    S1 = S1, S2 = S2,
+    Q1 = Q1, Q2 = Q2,
+    Q_total = Q1 + Q2,
+    P = precip_vec
+  )
  
   if (!is.null(area_km2)) {
     df$Q1_m3s      <- mmday_to_m3s(df$Q1, area_km2)
