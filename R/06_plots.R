@@ -65,10 +65,15 @@ plot_rainfall <- function(dates, precip) {
 #' @return A ggplot object.
 #' @export
 plot_hydrograph <- function(dates, Q_obs, sim, nse = NULL) {
-  if (is.null(nse)) nse <- calc_nse(Q_obs, sim$Q_total)
+  # Use m³/s columns if available (matches Q_obs units)
+  use_m3s <- "Q_total_m3s" %in% names(sim)
+  Q_sim   <- if (use_m3s) sim$Q_total_m3s else sim$Q_total
+  y_label <- if (use_m3s) "Q (m³/s)" else "Q (mm/day)"
+ 
+  if (is.null(nse)) nse <- calc_nse(Q_obs, Q_sim)
   df <- data.frame(
     date = rep(dates, 2),
-    Q    = c(Q_obs, sim$Q_total),
+    Q    = c(Q_obs, Q_sim),
     Source = rep(c("Observed", "Simulated"), each = length(dates))
   )
   ggplot2::ggplot(df, ggplot2::aes(date, Q, colour = Source)) +
@@ -77,7 +82,7 @@ plot_hydrograph <- function(dates, Q_obs, sim, nse = NULL) {
                                              "Simulated" = "red")) +
     smart_date_scale(dates) +
     ggplot2::labs(title = sprintf("Observed vs Simulated (NSE = %.4f)", nse),
-                  x = NULL, y = "Q (mm/day)", colour = NULL) +
+                  x = NULL, y = y_label, colour = NULL) +
     theme_hydro()
 }
  
@@ -91,10 +96,14 @@ plot_hydrograph <- function(dates, Q_obs, sim, nse = NULL) {
 #' @return A ggplot object.
 #' @export
 plot_uncertainty_envelope <- function(dates, Q_obs, sim, uncertainty) {
+  use_m3s <- "Q_total_m3s" %in% names(sim)
+  Q_sim   <- if (use_m3s) sim$Q_total_m3s else sim$Q_total
+  y_label <- if (use_m3s) "Q (m³/s)" else "Q (mm/day)"
+ 
   df <- data.frame(
     date   = dates,
     Obs    = Q_obs,
-    Best   = sim$Q_total,
+    Best   = Q_sim,
     Median = uncertainty$Q_median,
     Lower  = uncertainty$Q_lower,
     Upper  = uncertainty$Q_upper
@@ -114,7 +123,7 @@ plot_uncertainty_envelope <- function(dates, Q_obs, sim, uncertainty) {
       title = "Hydrograph with 90% Prediction Uncertainty Envelope",
       subtitle = sprintf("%.1f%% of observations within bounds | %d behavioural sets",
                          uncertainty$containment_pct, uncertainty$n_behavioural),
-      x = NULL, y = "Q (mm/day)", colour = NULL
+      x = NULL, y = y_label, colour = NULL
     ) +
     theme_hydro()
 }
@@ -127,14 +136,19 @@ plot_uncertainty_envelope <- function(dates, Q_obs, sim, uncertainty) {
 #' @return A ggplot object.
 #' @export
 plot_scatter <- function(Q_obs, sim) {
-  nse <- calc_nse(Q_obs, sim$Q_total)
-  df  <- data.frame(Obs = Q_obs, Sim = sim$Q_total)
+  use_m3s <- "Q_total_m3s" %in% names(sim)
+  Q_sim   <- if (use_m3s) sim$Q_total_m3s else sim$Q_total
+  unit    <- if (use_m3s) "m³/s" else "mm/day"
+ 
+  nse <- calc_nse(Q_obs, Q_sim)
+  df  <- data.frame(Obs = Q_obs, Sim = Q_sim)
   ggplot2::ggplot(df, ggplot2::aes(Obs, Sim)) +
     ggplot2::geom_point(alpha = 0.4, size = 1.5, colour = "steelblue") +
     ggplot2::geom_abline(slope = 1, intercept = 0,
                          linetype = "dashed", colour = "red") +
     ggplot2::labs(title = sprintf("Observed vs Simulated (NSE = %.4f)", nse),
-                  x = "Observed Q (mm/day)", y = "Simulated Q (mm/day)") +
+                  x = sprintf("Observed Q (%s)", unit),
+                  y = sprintf("Simulated Q (%s)", unit)) +
     ggplot2::coord_equal() +
     theme_hydro()
 }
@@ -147,10 +161,15 @@ plot_scatter <- function(Q_obs, sim) {
 #' @return A ggplot object.
 #' @export
 plot_components <- function(dates, sim) {
-  bfi <- sum(sim$Q2) / sum(sim$Q_total) * 100
+  use_m3s <- "Q_total_m3s" %in% names(sim)
+  Q1 <- if (use_m3s) sim$Q1_m3s else sim$Q1
+  Q2 <- if (use_m3s) sim$Q2_m3s else sim$Q2
+  unit <- if (use_m3s) "m³/s" else "mm/day"
+ 
+  bfi <- sum(Q2) / (sum(Q1) + sum(Q2)) * 100
   df <- data.frame(
     date = rep(dates, 2),
-    Q    = c(sim$Q1, sim$Q2),
+    Q    = c(Q1, Q2),
     Flow = rep(c("Q1 Surface Runoff", "Q2 Baseflow"), each = length(dates))
   )
   ggplot2::ggplot(df, ggplot2::aes(date, Q, fill = Flow)) +
@@ -159,7 +178,7 @@ plot_components <- function(dates, sim) {
                                            "Q2 Baseflow" = "dodgerblue3")) +
     smart_date_scale(dates) +
     ggplot2::labs(title = sprintf("Flow Components (BFI = %.1f%%)", bfi),
-                  x = NULL, y = "Q (mm/day)") +
+                  x = NULL, y = sprintf("Q (%s)", unit)) +
     theme_hydro()
 }
  
@@ -270,9 +289,13 @@ plot_param_correlation <- function(uncertainty, x_param = "k1", y_param = "k2") 
 #' @return A ggplot object.
 #' @export
 plot_flow_duration <- function(Q_obs, sim) {
+  use_m3s <- "Q_total_m3s" %in% names(sim)
+  Q_sim   <- if (use_m3s) sim$Q_total_m3s else sim$Q_total
+  unit    <- if (use_m3s) "m³/s" else "mm/day"
+ 
   n <- length(Q_obs)
   fdc_obs <- sort(Q_obs, decreasing = TRUE)
-  fdc_sim <- sort(sim$Q_total, decreasing = TRUE)
+  fdc_sim <- sort(Q_sim, decreasing = TRUE)
   exceed  <- (1:n) / n * 100
  
   df <- data.frame(
@@ -287,7 +310,7 @@ plot_flow_duration <- function(Q_obs, sim) {
                                              "Simulated" = "red")) +
     ggplot2::labs(title = "Flow Duration Curve",
                   x = "Exceedance Probability (%)",
-                  y = "Q (mm/day, log scale)") +
+                  y = sprintf("Q (%s, log scale)", unit)) +
     theme_hydro()
 }
  
