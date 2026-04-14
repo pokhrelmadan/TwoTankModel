@@ -14,72 +14,71 @@ two_tank_ode <- function(t, state, pars, precip_fun) {
  
 #' Run the Two-Tank Model
 #'
-#' Simulates daily discharge using the two-tank linear reservoir model.
-#' When \code{area_km2} is provided, the output includes m³/s columns.
+#' Simulates daily discharge using the two-tank linear reservoir model
+#' with optional evapotranspiration loss from the upper tank.
 #'
 #' @param k1,k2,k3 Numeric. Parameters \[1/day\].
+#' @param k4 Numeric. Evapotranspiration coefficient \[1/day\].
+#'   ET = k4 × S1. Set to 0 to disable ET. Default 0.
 #' @param times Numeric vector. Time steps.
 #' @param precip_vec Numeric vector. Daily precipitation \[mm/day\].
 #' @param S1_0,S2_0 Numeric. Initial tank storage \[mm\]. Default 0.
 #' @param area_km2 Numeric. Catchment area in km². Default NULL.
 #'
-#' @return Data.frame with simulation results in mm/day. If
-#'   \code{area_km2} is provided, also includes Q1_m3s, Q2_m3s, Q_total_m3s.
+#' @return Data.frame. If \code{area_km2} is provided, also includes
+#'   Q1_m3s, Q2_m3s, Q_total_m3s. Always includes an ET column.
 #'
 #' @importFrom deSolve ode
 #' @export
 run_two_tank <- function(k1, k2, k3, times, precip_vec,
-                         S1_0 = 0, S2_0 = 0, area_km2 = NULL) {
+                         S1_0 = 0, S2_0 = 0, area_km2 = NULL,
+                         k4 = 0) {
  
-  if (!is.numeric(k1) || !is.numeric(k2) || !is.numeric(k3))
-    stop("Parameters k1, k2, k3 must be numeric.")
+  if (!is.numeric(k1) || !is.numeric(k2) || !is.numeric(k3) || !is.numeric(k4))
+    stop("Parameters k1, k2, k3, k4 must be numeric.")
   if (k1 <= 0 || k2 <= 0 || k3 <= 0)
-    stop("Parameters must be positive. Got: k1=", k1, " k2=", k2, " k3=", k3)
+    stop("Parameters k1, k2, k3 must be positive. Got: k1=", k1,
+         " k2=", k2, " k3=", k3)
+  if (k4 < 0)
+    stop("Parameter k4 (ET) must be non-negative. Got k4=", k4)
   if (length(times) != length(precip_vec))
     stop("times and precip_vec must have equal length.")
   if (any(precip_vec < 0)) stop("Precipitation cannot be negative.")
  
-  precip_fun <- approxfun(times, precip_vec, method = "constant", rule = 2)
-  pars  <- c(k1 = k1, k2 = k2, k3 = k3)
-  state <- c(S1 = S1_0, S2 = S2_0)
- 
   # ── Direct analytical integration ──
-  # For linear reservoirs with constant P during each daily time step,
-  # the system has closed-form solutions that are ALWAYS numerically stable.
-  # This is faster and more reliable than lsoda for this specific model.
+  # Upper tank: dS1/dt = P - (k1 + k2 + k4)*S1
+  # Lower tank: dS2/dt = k2*S1 - k3*S2
+  # These linear reservoirs have closed-form solutions — always stable.
  
-  n <- length(times)
+  n  <- length(times)
   S1 <- numeric(n)
   S2 <- numeric(n)
   Q1 <- numeric(n)
   Q2 <- numeric(n)
+  ET <- numeric(n)
  
   S1[1] <- S1_0
   S2[1] <- S2_0
   Q1[1] <- k1 * S1[1]
   Q2[1] <- k3 * S2[1]
+  ET[1] <- k4 * S1[1]
  
-  # Combined upper-tank drainage rate
-  k_out <- k1 + k2
+  k_out <- k1 + k2 + k4  # total upper-tank drainage rate
  
   for (i in 2:n) {
     dt <- times[i] - times[i - 1]
-    P  <- precip_vec[i - 1]  # precipitation during interval
+    P  <- precip_vec[i - 1]
  
-    # Upper tank: dS1/dt = P - (k1 + k2)*S1
-    # Analytical solution: S1(t+dt) = (P/k_out) + (S1_prev - P/k_out) * exp(-k_out*dt)
-    S1_eq  <- P / k_out                       # equilibrium storage
+    S1_eq  <- P / k_out
     S1[i]  <- S1_eq + (S1[i-1] - S1_eq) * exp(-k_out * dt)
- 
-    # Average S1 over interval (for correct percolation to lower tank)
     S1_avg <- (S1[i-1] + S1[i]) / 2
  
-    # Lower tank: dS2/dt = k2*S1_avg - k3*S2
     S2_eq  <- (k2 * S1_avg) / k3
     S2[i]  <- S2_eq + (S2[i-1] - S2_eq) * exp(-k3 * dt)
  
     Q1[i] <- k1 * S1[i]
     Q2[i] <- k3 * S2[i]
+    ET[i] <- k4 * S1[i]
   }
  
   df <- data.frame(
@@ -87,6 +86,7 @@ run_two_tank <- function(k1, k2, k3, times, precip_vec,
     S1 = S1, S2 = S2,
     Q1 = Q1, Q2 = Q2,
     Q_total = Q1 + Q2,
+    ET = ET,
     P = precip_vec
   )
  
@@ -125,5 +125,10 @@ print_model_summary <- function(sim, label = "Simulation", units = "mm") {
   cat(sprintf("  ║  Peak Q2 (baseflow) : %.3f %s\n", max(Q2), u))
   cat(sprintf("  ║  Baseflow index     : %.1f %%\n", sum(Q2)/sum(Q)*100))
   cat(sprintf("  ║  Runoff coefficient : %.3f\n", sum(sim$Q_total)/sum(sim$P)))
+  if ("ET" %in% names(sim) && sum(sim$ET) > 0) {
+    cat(sprintf("  ║  Total ET           : %.1f mm\n", sum(sim$ET)))
+    cat(sprintf("  ║  ET fraction (ET/P) : %.1f %%\n",
+                sum(sim$ET) / sum(sim$P) * 100))
+  }
   cat("  ╚══════════════════════════════════════════════════════╝\n\n")
 }

@@ -54,6 +54,7 @@ K1_BOUNDS <- c(0.01, 0.80)     # Surface runoff coefficient
 K2_BOUNDS <- c(0.01, 0.50)     # Percolation coefficient
 K3_BOUNDS <- c(0.001, 0.15)    # Baseflow coefficient
 
+K4_BOUNDS <- c(0.001, 0.15)    # ET coefficient
 # Threshold for behavioural (acceptable) parameter sets
 #   Standard: NSE >= 0.5
 NSE_THRESHOLD <- 0.5

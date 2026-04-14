@@ -26,9 +26,14 @@ sensitivity_analysis <- function(base_params, times, precip_vec,
                                  Q_obs = NULL, area_km2 = NULL,
                                  perturb = 0.20, verbose = TRUE) {
  
+  # Check if k4 was calibrated
+  has_k4 <- length(base_params) >= 4 && !is.na(base_params[4])
+  base_k4 <- if (has_k4) base_params[4] else 0
+ 
   # Baseline simulation
   base_sim <- run_two_tank(base_params[1], base_params[2], base_params[3],
-                           times, precip_vec, area_km2 = area_km2)
+                           times, precip_vec, area_km2 = area_km2,
+                           k4 = base_k4)
   Q_base   <- if (!is.null(area_km2)) base_sim$Q_total_m3s else base_sim$Q_total
  
   if (any(is.na(Q_base))) {
@@ -42,19 +47,24 @@ sensitivity_analysis <- function(base_params, times, precip_vec,
   base_nse  <- if (!is.null(Q_obs)) calc_nse(Q_obs, Q_base) else NA
  
   results <- data.frame()
-  param_names <- c("k1", "k2", "k3")
+  n_params <- if (has_k4) 4 else 3
+  param_names <- c("k1", "k2", "k3", "k4")[1:n_params]
  
-  for (i in 1:3) {
+  for (i in 1:n_params) {
     for (direction in c(-1, 1)) {
       p <- base_params
-      p[i] <- p[i] * (1 + direction * perturb)
+      k4_p <- base_k4
+      if (i <= 3) {
+        p[i] <- p[i] * (1 + direction * perturb)
+      } else {
+        k4_p <- base_k4 * (1 + direction * perturb)
+      }
  
       sim_p <- run_two_tank(p[1], p[2], p[3], times, precip_vec,
-                            area_km2 = area_km2)
+                            area_km2 = area_km2, k4 = k4_p)
       Q_p <- if (!is.null(area_km2)) sim_p$Q_total_m3s else sim_p$Q_total
  
       if (any(is.na(Q_p))) {
-        # Skip failed perturbation
         results <- rbind(results, data.frame(
           Parameter   = param_names[i],
           Change      = sprintf("%+.0f%%", direction * perturb * 100),
@@ -84,9 +94,10 @@ sensitivity_analysis <- function(base_params, times, precip_vec,
     cat(sprintf("  ║   SENSITIVITY ANALYSIS (±%.0f%% perturbation)        ║\n",
                 perturb * 100))
     cat("  ╠══════════════════════════════════════════════════════╣\n")
-    cat("  Baseline: k1=", sprintf("%.4f", base_params[1]),
-        " k2=", sprintf("%.4f", base_params[2]),
-        " k3=", sprintf("%.4f", base_params[3]), "\n", sep = "")
+    base_str <- sprintf("  Baseline: k1=%.4f k2=%.4f k3=%.4f",
+                        base_params[1], base_params[2], base_params[3])
+    if (has_k4) base_str <- paste0(base_str, sprintf(" k4=%.4f", base_k4))
+    cat(base_str, "\n", sep = "")
     cat(sprintf("  Base peak=%.3f, volume=%.1f, BFI=%.1f%%",
                 base_peak, base_vol, base_bfi))
     if (!is.null(Q_obs)) cat(sprintf(", NSE=%.4f", base_nse))
@@ -94,7 +105,6 @@ sensitivity_analysis <- function(base_params, times, precip_vec,
     print(results, row.names = FALSE)
     cat("\n")
  
-    # Rank parameters by sensitivity
     avg_sens <- aggregate(abs(results$Peak_Q_pct),
                           list(Parameter = results$Parameter), mean)
     avg_sens <- avg_sens[order(-avg_sens$x), ]

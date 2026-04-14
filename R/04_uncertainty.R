@@ -88,6 +88,9 @@ extract_uncertainty <- function(cal_result, times, precip_vec, Q_obs,
                   param_ranges$max[i]))
   }
  
+  # Check if k4 (ET) was calibrated
+  has_k4 <- "k4" %in% names(behav)
+ 
   n_run <- min(n_behav, max_behavioural)
   if (verbose) cat(sprintf("  ║  Computing envelope (%d sims)...\n", n_run))
  
@@ -97,12 +100,13 @@ extract_uncertainty <- function(cal_result, times, precip_vec, Q_obs,
   n_cores <- max(1, parallel::detectCores(logical = FALSE) - 1)
   if (n_cores > 1 && n_run >= 50) {
     param_list <- lapply(1:n_run, function(b) {
-      c(behav$k1[b], behav$k2[b], behav$k3[b])
+      k4_val <- if (has_k4) behav$k4[b] else 0
+      c(behav$k1[b], behav$k2[b], behav$k3[b], k4_val)
     })
  
     worker_fun <- function(p, times, precip_vec, area_km2) {
       sim_b <- run_two_tank(p[1], p[2], p[3], times, precip_vec,
-                            area_km2 = area_km2)
+                            area_km2 = area_km2, k4 = p[4])
       if (!is.null(area_km2)) sim_b$Q_total_m3s else sim_b$Q_total
     }
  
@@ -125,8 +129,10 @@ extract_uncertainty <- function(cal_result, times, precip_vec, Q_obs,
     for (b in 1:n_run) Q_ensemble[, b] <- results[[b]]
   } else {
     for (b in 1:n_run) {
+      k4_val <- if (has_k4) behav$k4[b] else 0
       sim_b <- run_two_tank(behav$k1[b], behav$k2[b], behav$k3[b],
-                            times, precip_vec, area_km2 = area_km2)
+                            times, precip_vec, area_km2 = area_km2,
+                            k4 = k4_val)
       Q_ensemble[, b] <- if (!is.null(area_km2)) sim_b$Q_total_m3s else sim_b$Q_total
     }
   }
