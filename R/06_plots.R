@@ -214,16 +214,23 @@ plot_storage <- function(dates, sim) {
 #' @export
 plot_dotty <- function(cal_result, nse_threshold = 0.5) {
   s <- cal_result$samples
+  has_k4 <- "k4" %in% names(s) && any(s$k4 > 0)
+ 
   mc_long <- rbind(
     data.frame(Parameter = "k1 (surface runoff)", Value = s$k1, NSE = s$NSE),
     data.frame(Parameter = "k2 (percolation)",    Value = s$k2, NSE = s$NSE),
     data.frame(Parameter = "k3 (baseflow)",       Value = s$k3, NSE = s$NSE)
   )
+  if (has_k4) {
+    mc_long <- rbind(mc_long,
+      data.frame(Parameter = "k4 (ET)", Value = s$k4, NSE = s$NSE))
+  }
+ 
   ggplot2::ggplot(mc_long, ggplot2::aes(Value, NSE)) +
     ggplot2::geom_point(alpha = 0.15, size = 0.6, colour = "grey40") +
     ggplot2::geom_hline(yintercept = nse_threshold,
                         linetype = "dashed", colour = "red") +
-    ggplot2::facet_wrap(~Parameter, scales = "free_x") +
+    ggplot2::facet_wrap(~Parameter, scales = "free_x", ncol = 2) +
     ggplot2::labs(
       title = "Parameter Identifiability (Dotty Plots)",
       subtitle = "Sharp peak = well identified | Flat = equifinal (uncertain)",
@@ -334,6 +341,8 @@ plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
                      output_dir = ".", prefix = "twotank") {
  
   sim <- cal_result$best_sim
+  has_k4 <- "k4" %in% names(uncertainty$behavioural) &&
+            any(uncertainty$behavioural$k4 > 0)
  
   p1  <- plot_rainfall(dates, precip)
   p2  <- plot_uncertainty_envelope(dates, Q_obs, sim, uncertainty)
@@ -348,12 +357,26 @@ plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
   p11 <- plot_param_correlation(uncertainty, "k2", "k3")
   p12 <- plot_flow_duration(Q_obs, sim)
  
+  # Extra k4 correlation plots if ET is enabled
+  if (has_k4) {
+    p13 <- plot_param_correlation(uncertainty, "k1", "k4")
+    p14 <- plot_param_correlation(uncertainty, "k2", "k4")
+    p15 <- plot_param_correlation(uncertainty, "k3", "k4")
+  }
+ 
   # Save combined PDF
   pdf_path <- file.path(output_dir, paste0(prefix, "_results.pdf"))
-  grDevices::pdf(pdf_path, width = 12, height = 28)
-  gridExtra::grid.arrange(p1, p2, p3, p4, p5, p6, p7, p8, p12,
-                           ncol = 1,
-                           heights = c(0.7, 1.2, 1, 1, 1, 1, 1, 0.8, 1))
+  pdf_height <- if (has_k4) 32 else 28
+  grDevices::pdf(pdf_path, width = 12, height = pdf_height)
+  if (has_k4) {
+    gridExtra::grid.arrange(p1, p2, p3, p4, p5, p6, p7, p8, p12,
+                             ncol = 1,
+                             heights = c(0.7, 1.2, 1, 1, 1, 1, 1.3, 0.8, 1))
+  } else {
+    gridExtra::grid.arrange(p1, p2, p3, p4, p5, p6, p7, p8, p12,
+                             ncol = 1,
+                             heights = c(0.7, 1.2, 1, 1, 1, 1, 1, 0.8, 1))
+  }
   grDevices::dev.off()
  
   # Save individual PNGs
@@ -369,8 +392,9 @@ plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
                   p5, width = 12, height = 4, dpi = 150)
   ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_storage.png")),
                   p6, width = 12, height = 4, dpi = 150)
+  dotty_h <- if (has_k4) 7 else 5
   ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_dotty.png")),
-                  p7, width = 12, height = 5, dpi = 150)
+                  p7, width = 12, height = dotty_h, dpi = 150)
   ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_nse_hist.png")),
                   p8, width = 10, height = 4, dpi = 150)
   ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_corr_k1k2.png")),
@@ -381,12 +405,27 @@ plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
                   p11, width = 7, height = 6, dpi = 150)
   ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_fdc.png")),
                   p12, width = 10, height = 5, dpi = 150)
+  if (has_k4) {
+    ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_corr_k1k4.png")),
+                    p13, width = 7, height = 6, dpi = 150)
+    ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_corr_k2k4.png")),
+                    p14, width = 7, height = 6, dpi = 150)
+    ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_corr_k3k4.png")),
+                    p15, width = 7, height = 6, dpi = 150)
+  }
  
-  cat(sprintf("  Saved: %s + 12 PNGs in %s\n", basename(pdf_path), output_dir))
+  n_plots <- if (has_k4) 15 else 12
+  cat(sprintf("  Saved: %s + %d PNGs in %s\n", basename(pdf_path), n_plots, output_dir))
  
-  invisible(list(rainfall = p1, envelope = p2, hydrograph = p3,
-                 scatter = p4, components = p5, storage = p6,
-                 dotty = p7, nse_hist = p8,
-                 corr_k1k2 = p9, corr_k1k3 = p10, corr_k2k3 = p11,
-                 fdc = p12))
+  out_list <- list(rainfall = p1, envelope = p2, hydrograph = p3,
+                   scatter = p4, components = p5, storage = p6,
+                   dotty = p7, nse_hist = p8,
+                   corr_k1k2 = p9, corr_k1k3 = p10, corr_k2k3 = p11,
+                   fdc = p12)
+  if (has_k4) {
+    out_list$corr_k1k4 <- p13
+    out_list$corr_k2k4 <- p14
+    out_list$corr_k3k4 <- p15
+  }
+  invisible(out_list)
 }
