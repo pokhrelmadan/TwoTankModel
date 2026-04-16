@@ -35,7 +35,7 @@ cd /path/to/my_project
 Rscript -e 'TwoTankModel::create_config_template()'
  
 # Step 3: Edit config.R in any text editor
-nano config.R          # or vim, VS Code, etc.
+vi config.R          # or vim, VS Code, etc.
  
 # Step 4: Put your data in the data/ folder
 #   data/rainfall.csv   (columns: date, P)
