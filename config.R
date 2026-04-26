@@ -64,6 +64,12 @@ B1_BOUNDS <- c(1.0, 3.0)
 #   Standard: NSE >= 0.5
 NSE_THRESHOLD <- 0.5
 
+# Calibration period — which months to use for computing NSE
+#   NULL           = use all months (full year)
+#   c(4:10)        = April through October only (skip winter/snowmelt)
+#   c(6, 7, 8, 9)  = June through September only (summer)
+CAL_MONTHS <- c(4:10)
+
 # Objective function for calibration
 #   Options: "NSE", "KGE", "LogNSE"
 OBJECTIVE <- "NSE"

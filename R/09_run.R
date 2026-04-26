@@ -140,7 +140,17 @@ run_model <- function(config_file = "config.R") {
   cat("━━━ STEP 6: Performance metrics ━━━\n")
   Q_sim_cmp <- if (!is.null(cfg$CATCHMENT_AREA_KM2)) cal$best_sim$Q_total_m3s
                else cal$best_sim$Q_total
-  metrics <- calc_all_metrics(data$Q_obs, Q_sim_cmp)
+
+  if (!is.null(cfg$CAL_MONTHS)) {
+    idx <- which(as.integer(format(data$dates, "%m")) %in% cfg$CAL_MONTHS)
+    cat("  Calibration period metrics (", paste(month.abb[range(cfg$CAL_MONTHS)], collapse="–"), "):\n", sep="")
+    metrics <- calc_all_metrics(data$Q_obs[idx], Q_sim_cmp[idx])
+    cat("\n  Full year metrics (all 12 months):\n")
+    metrics_full <- calc_all_metrics(data$Q_obs, Q_sim_cmp)
+  } else {
+    metrics <- calc_all_metrics(data$Q_obs, Q_sim_cmp)
+  }
+
   units_str <- if (!is.null(cfg$CATCHMENT_AREA_KM2)) "m3s" else "mm"
   print_model_summary(cal$best_sim, label = "Calibrated Model", units = units_str)
 
@@ -160,7 +170,8 @@ run_model <- function(config_file = "config.R") {
   if (cfg$SAVE_PLOTS) {
     cat("━━━ STEP 9: Generating plots ━━━\n")
     plots <- plot_all(data$dates, data$precip, data$Q_obs, cal, unc,
-                      output_dir = plot_dir, prefix = cfg$RUN_NAME)
+                      output_dir = plot_dir, prefix = cfg$RUN_NAME,
+                      cal_months = cfg$CAL_MONTHS)
   }
 
   # ── Step 10: Save ──

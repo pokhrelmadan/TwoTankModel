@@ -64,13 +64,26 @@ plot_rainfall <- function(dates, precip) {
 #' @param nse Numeric. NSE value to display. Default NULL (calculated).
 #' @return A ggplot object.
 #' @export
-plot_hydrograph <- function(dates, Q_obs, sim, nse = NULL) {
-  # Use m³/s columns if available (matches Q_obs units)
+plot_hydrograph <- function(dates, Q_obs, sim, nse = NULL, cal_months = NULL) {
   use_m3s <- "Q_total_m3s" %in% names(sim)
   Q_sim   <- if (use_m3s) sim$Q_total_m3s else sim$Q_total
   y_label <- if (use_m3s) "Q (m³/s)" else "Q (mm/day)"
 
-  if (is.null(nse)) nse <- calc_nse(Q_obs, Q_sim)
+  # Compute NSE on calibration period if specified
+  if (is.null(nse)) {
+    if (!is.null(cal_months)) {
+      idx <- which(as.integer(format(dates, "%m")) %in% cal_months)
+      nse <- calc_nse(Q_obs[idx], Q_sim[idx])
+      nse_label <- sprintf("NSE = %.4f (cal: %s)", nse,
+                           paste(month.abb[range(cal_months)], collapse = "–"))
+    } else {
+      nse <- calc_nse(Q_obs, Q_sim)
+      nse_label <- sprintf("NSE = %.4f", nse)
+    }
+  } else {
+    nse_label <- sprintf("NSE = %.4f", nse)
+  }
+
   df <- data.frame(
     date = rep(dates, 2),
     Q    = c(Q_obs, Q_sim),
@@ -81,7 +94,7 @@ plot_hydrograph <- function(dates, Q_obs, sim, nse = NULL) {
     ggplot2::scale_colour_manual(values = c("Observed" = "black",
                                              "Simulated" = "red")) +
     smart_date_scale(dates) +
-    ggplot2::labs(title = sprintf("Observed vs Simulated (NSE = %.4f)", nse),
+    ggplot2::labs(title = paste("Observed vs Simulated (", nse_label, ")"),
                   x = NULL, y = y_label, colour = NULL) +
     theme_hydro()
 }
@@ -135,18 +148,27 @@ plot_uncertainty_envelope <- function(dates, Q_obs, sim, uncertainty) {
 #' @param sim Data.frame. Output from \code{\link{run_two_tank}}.
 #' @return A ggplot object.
 #' @export
-plot_scatter <- function(Q_obs, sim) {
+plot_scatter <- function(Q_obs, sim, dates = NULL, cal_months = NULL) {
   use_m3s <- "Q_total_m3s" %in% names(sim)
   Q_sim   <- if (use_m3s) sim$Q_total_m3s else sim$Q_total
   unit    <- if (use_m3s) "m³/s" else "mm/day"
 
-  nse <- calc_nse(Q_obs, Q_sim)
+  if (!is.null(cal_months) && !is.null(dates)) {
+    idx <- which(as.integer(format(dates, "%m")) %in% cal_months)
+    nse <- calc_nse(Q_obs[idx], Q_sim[idx])
+    nse_label <- sprintf("NSE = %.4f (cal: %s)",
+                         nse, paste(month.abb[range(cal_months)], collapse = "–"))
+  } else {
+    nse <- calc_nse(Q_obs, Q_sim)
+    nse_label <- sprintf("NSE = %.4f", nse)
+  }
+
   df  <- data.frame(Obs = Q_obs, Sim = Q_sim)
   ggplot2::ggplot(df, ggplot2::aes(Obs, Sim)) +
     ggplot2::geom_point(alpha = 0.4, size = 1.5, colour = "steelblue") +
     ggplot2::geom_abline(slope = 1, intercept = 0,
                          linetype = "dashed", colour = "red") +
-    ggplot2::labs(title = sprintf("Observed vs Simulated (NSE = %.4f)", nse),
+    ggplot2::labs(title = paste("Observed vs Simulated (", nse_label, ")"),
                   x = sprintf("Observed Q (%s)", unit),
                   y = sprintf("Simulated Q (%s)", unit)) +
     ggplot2::coord_equal() +
@@ -343,7 +365,8 @@ plot_flow_duration <- function(Q_obs, sim) {
 #' @return Invisible list of all ggplot objects.
 #' @export
 plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
-                     output_dir = ".", prefix = "twotank") {
+                     output_dir = ".", prefix = "twotank",
+                     cal_months = NULL) {
 
   sim <- cal_result$best_sim
   has_k4 <- "k4" %in% names(uncertainty$behavioural) &&
@@ -353,8 +376,8 @@ plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
 
   p1  <- plot_rainfall(dates, precip)
   p2  <- plot_uncertainty_envelope(dates, Q_obs, sim, uncertainty)
-  p3  <- plot_hydrograph(dates, Q_obs, sim)
-  p4  <- plot_scatter(Q_obs, sim)
+  p3  <- plot_hydrograph(dates, Q_obs, sim, cal_months = cal_months)
+  p4  <- plot_scatter(Q_obs, sim, dates = dates, cal_months = cal_months)
   p5  <- plot_components(dates, sim)
   p6  <- plot_storage(dates, sim)
   p7  <- plot_dotty(cal_result)
