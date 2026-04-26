@@ -58,6 +58,7 @@ run_model <- function(config_file = "config.R") {
   if (!exists("SAVE_CONFIG_COPY",   envir = cfg))  cfg$SAVE_CONFIG_COPY   <- TRUE
   if (!exists("K4_BOUNDS",          envir = cfg))  cfg$K4_BOUNDS          <- c(0, 0)
   if (!exists("B1_BOUNDS",          envir = cfg))  cfg$B1_BOUNDS          <- c(1, 1)
+  if (!exists("CAL_MONTHS",         envir = cfg))  cfg$CAL_MONTHS         <- NULL
   if (!exists("DATE_FORMAT",        envir = cfg))  cfg$DATE_FORMAT        <- "auto"
   if (!exists("RANDOM_SEED",        envir = cfg))  cfg$RANDOM_SEED        <- 42
   if (!exists("VERBOSE",            envir = cfg))  cfg$VERBOSE            <- TRUE
@@ -103,6 +104,8 @@ run_model <- function(config_file = "config.R") {
     b1_range   = cfg$B1_BOUNDS,
     area_km2   = cfg$CATCHMENT_AREA_KM2,
     objective  = cfg$OBJECTIVE,
+    cal_months = cfg$CAL_MONTHS,
+    dates      = data$dates,
     seed       = cfg$RANDOM_SEED,
     verbose    = cfg$VERBOSE
   )
@@ -232,6 +235,7 @@ K2_BOUNDS          <- c(0.01, 0.50)            # percolation coef
 K3_BOUNDS          <- c(0.001, 0.15)           # baseflow coef
 K4_BOUNDS          <- c(0, 0.10)               # ET coef (set c(0,0) to disable)
 B1_BOUNDS          <- c(1, 1)                  # nonlinear exponent (set c(1.5,3) to enable)
+CAL_MONTHS         <- NULL                     # NULL=all, c(4:10)=Apr-Oct only
 NSE_THRESHOLD      <- 0.5                      # for behavioural sets
 OBJECTIVE          <- "NSE"                    # "NSE", "KGE", "LogNSE"
 
