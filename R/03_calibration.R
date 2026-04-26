@@ -34,6 +34,7 @@ calibrate_montecarlo <- function(times, precip_vec, Q_obs,
                                  k2_range = c(0.01, 0.50),
                                  k3_range = c(0.001, 0.15),
                                  k4_range = c(0, 0.10),
+                                 b1_range = c(1, 1),
                                  area_km2 = NULL,
                                  objective = "NSE",
                                  seed = 42,
@@ -52,13 +53,18 @@ calibrate_montecarlo <- function(times, precip_vec, Q_obs,
  
   # Check if ET calibration is enabled
   use_k4 <- (k4_range[2] > 0)
-  n_par  <- if (use_k4) 4 else 3
+  use_b1 <- (b1_range[1] != b1_range[2])  # nonlinear if range is not [1,1]
+  n_par  <- 3 + as.integer(use_k4) + as.integer(use_b1)
  
   par_lower <- c(k1_range[1], k2_range[1], k3_range[1])
   par_upper <- c(k1_range[2], k2_range[2], k3_range[2])
   if (use_k4) {
     par_lower <- c(par_lower, k4_range[1])
     par_upper <- c(par_upper, k4_range[2])
+  }
+  if (use_b1) {
+    par_lower <- c(par_lower, b1_range[1])
+    par_upper <- c(par_upper, b1_range[2])
   }
  
   if (verbose) {
@@ -82,6 +88,12 @@ calibrate_montecarlo <- function(times, precip_vec, Q_obs,
     } else {
       cat("  ║  k4 (ET)        : disabled (k4_range[2] = 0)\n")
     }
+    if (use_b1) {
+      cat(sprintf("  ║  b1 range       : [%.2f – %.2f]   (nonlinear exponent)\n",
+                  b1_range[1], b1_range[2]))
+    } else {
+      cat("  ║  b1             : 1.0 (linear mode)\n")
+    }
     cat("  ╚══════════════════════════════════════════════════════╝\n\n")
   }
  
@@ -97,6 +109,12 @@ calibrate_montecarlo <- function(times, precip_vec, Q_obs,
     samples$k4 <- par_lower[4] + lhs_mat[,4] * (par_upper[4] - par_lower[4])
   } else {
     samples$k4 <- 0
+  }
+  if (use_b1) {
+    col_b1 <- 3 + as.integer(use_k4) + 1
+    samples$b1 <- par_lower[col_b1] + lhs_mat[,col_b1] * (par_upper[col_b1] - par_lower[col_b1])
+  } else {
+    samples$b1 <- 1
   }
   samples$NSE    <- NA_real_
   samples$KGE    <- NA_real_
@@ -128,13 +146,13 @@ calibrate_montecarlo <- function(times, precip_vec, Q_obs,
     # ── PARALLEL execution ──
     # Build list of parameter sets
     param_list <- lapply(1:n_samples, function(i) {
-      c(samples$k1[i], samples$k2[i], samples$k3[i], samples$k4[i])
+      c(samples$k1[i], samples$k2[i], samples$k3[i], samples$k4[i], samples$b1[i])
     })
  
     # Worker function — must be self-contained for parallel workers
     worker_fun <- function(p, times, precip_vec, Q_obs, area_km2) {
       sim_i <- run_two_tank(p[1], p[2], p[3], times, precip_vec,
-                            area_km2 = area_km2, k4 = p[4])
+                            area_km2 = area_km2, k4 = p[4], b1 = p[5])
       Q_sim <- if (!is.null(area_km2)) sim_i$Q_total_m3s else sim_i$Q_total
  
       # Handle failed simulations
@@ -250,7 +268,7 @@ calibrate_montecarlo <- function(times, precip_vec, Q_obs,
     for (i in 1:n_samples) {
       sim_i <- run_two_tank(samples$k1[i], samples$k2[i], samples$k3[i],
                             times, precip_vec, area_km2 = area_km2,
-                            k4 = samples$k4[i])
+                            k4 = samples$k4[i], b1 = samples$b1[i])
       Q_sim <- if (!is.null(area_km2)) sim_i$Q_total_m3s else sim_i$Q_total
  
       # Skip failed simulations
@@ -298,17 +316,18 @@ calibrate_montecarlo <- function(times, precip_vec, Q_obs,
   elapsed <- (proc.time() - t0)[3]
   if (verbose) cat("\n\n")
  
-  if (use_k4) {
-    best_params <- unlist(samples[best_idx, c("k1", "k2", "k3", "k4")])
-    names(best_params) <- c("k1", "k2", "k3", "k4")
-  } else {
-    best_params <- unlist(samples[best_idx, c("k1", "k2", "k3")])
-    names(best_params) <- c("k1", "k2", "k3")
-  }
+  # Extract best params
+  param_cols <- c("k1", "k2", "k3")
+  if (use_k4) param_cols <- c(param_cols, "k4")
+  if (use_b1) param_cols <- c(param_cols, "b1")
+  best_params <- unlist(samples[best_idx, param_cols])
+  names(best_params) <- param_cols
+ 
   best_k4 <- if (use_k4) best_params["k4"] else 0
-  best_sim <- run_two_tank(best_params[1], best_params[2], best_params[3],
+  best_b1 <- if (use_b1) best_params["b1"] else 1
+  best_sim <- run_two_tank(best_params["k1"], best_params["k2"], best_params["k3"],
                            times, precip_vec, area_km2 = area_km2,
-                           k4 = best_k4)
+                           k4 = best_k4, b1 = best_b1)
  
   best_metrics <- list(
     NSE    = samples$NSE[best_idx],
@@ -327,7 +346,10 @@ calibrate_montecarlo <- function(times, precip_vec, Q_obs,
     cat(sprintf("  │  k2 = %.4f  (percolation)                          │\n", best_params[2]))
     cat(sprintf("  │  k3 = %.4f  (baseflow)                            │\n", best_params[3]))
     if (use_k4) {
-      cat(sprintf("  │  k4 = %.4f  (evapotranspiration)                  │\n", best_params[4]))
+      cat(sprintf("  │  k4 = %.4f  (evapotranspiration)                  │\n", best_params["k4"]))
+    }
+    if (use_b1) {
+      cat(sprintf("  │  b1 = %.4f  (nonlinear exponent)                  │\n", best_params["b1"]))
     }
     cat("  ├─────────────────────────────────────────────────────┤\n")
     cat(sprintf("  │  NSE    = %.4f                                    │\n", best_metrics$NSE))

@@ -1,10 +1,10 @@
 #' @title Visualisation Functions
 #' @description Publication-ready plots for the two-tank model including
 #'   hydrographs, uncertainty envelopes, diagnostics, and analysis.
- 
- 
+
+
 # ── Shared theme ─────────────────────────────────────────────────────────────
- 
+
 theme_hydro <- function(base_size = 11) {
   ggplot2::theme_bw(base_size = base_size) +
     ggplot2::theme(
@@ -15,14 +15,14 @@ theme_hydro <- function(base_size = 11) {
       axis.text.x      = ggplot2::element_text(angle = 45, hjust = 1)
     )
 }
- 
- 
+
+
 # ── Smart date-axis scaling based on data length ───────────────────────────
 #   Picks reasonable tick intervals and label formats to avoid cramming.
 smart_date_scale <- function(dates) {
   n_days  <- length(dates)
   n_years <- as.numeric(diff(range(dates))) / 365.25
- 
+
   if (n_years <= 1) {
     breaks <- "1 month";   labels <- "%b"
   } else if (n_years <= 3) {
@@ -34,11 +34,11 @@ smart_date_scale <- function(dates) {
   } else {
     breaks <- "5 years";   labels <- "%Y"
   }
- 
+
   ggplot2::scale_x_date(date_breaks = breaks, date_labels = labels)
 }
- 
- 
+
+
 #' Plot Daily Rainfall Hyetograph
 #'
 #' @param dates Date vector.
@@ -54,8 +54,8 @@ plot_rainfall <- function(dates, precip) {
     ggplot2::labs(title = "Daily Precipitation", x = NULL, y = "P (mm/day)") +
     theme_hydro()
 }
- 
- 
+
+
 #' Plot Observed vs Simulated Hydrograph
 #'
 #' @param dates Date vector.
@@ -69,7 +69,7 @@ plot_hydrograph <- function(dates, Q_obs, sim, nse = NULL) {
   use_m3s <- "Q_total_m3s" %in% names(sim)
   Q_sim   <- if (use_m3s) sim$Q_total_m3s else sim$Q_total
   y_label <- if (use_m3s) "Q (m³/s)" else "Q (mm/day)"
- 
+
   if (is.null(nse)) nse <- calc_nse(Q_obs, Q_sim)
   df <- data.frame(
     date = rep(dates, 2),
@@ -85,8 +85,8 @@ plot_hydrograph <- function(dates, Q_obs, sim, nse = NULL) {
                   x = NULL, y = y_label, colour = NULL) +
     theme_hydro()
 }
- 
- 
+
+
 #' Plot Uncertainty Envelope
 #'
 #' @param dates Date vector.
@@ -99,7 +99,7 @@ plot_uncertainty_envelope <- function(dates, Q_obs, sim, uncertainty) {
   use_m3s <- "Q_total_m3s" %in% names(sim)
   Q_sim   <- if (use_m3s) sim$Q_total_m3s else sim$Q_total
   y_label <- if (use_m3s) "Q (m³/s)" else "Q (mm/day)"
- 
+
   df <- data.frame(
     date   = dates,
     Obs    = Q_obs,
@@ -127,8 +127,8 @@ plot_uncertainty_envelope <- function(dates, Q_obs, sim, uncertainty) {
     ) +
     theme_hydro()
 }
- 
- 
+
+
 #' Plot Observed vs Simulated Scatter
 #'
 #' @param Q_obs Numeric vector. Observed discharge.
@@ -139,7 +139,7 @@ plot_scatter <- function(Q_obs, sim) {
   use_m3s <- "Q_total_m3s" %in% names(sim)
   Q_sim   <- if (use_m3s) sim$Q_total_m3s else sim$Q_total
   unit    <- if (use_m3s) "m³/s" else "mm/day"
- 
+
   nse <- calc_nse(Q_obs, Q_sim)
   df  <- data.frame(Obs = Q_obs, Sim = Q_sim)
   ggplot2::ggplot(df, ggplot2::aes(Obs, Sim)) +
@@ -152,8 +152,8 @@ plot_scatter <- function(Q_obs, sim) {
     ggplot2::coord_equal() +
     theme_hydro()
 }
- 
- 
+
+
 #' Plot Flow Components (Stacked Area)
 #'
 #' @param dates Date vector.
@@ -165,7 +165,7 @@ plot_components <- function(dates, sim) {
   Q1 <- if (use_m3s) sim$Q1_m3s else sim$Q1
   Q2 <- if (use_m3s) sim$Q2_m3s else sim$Q2
   unit <- if (use_m3s) "m³/s" else "mm/day"
- 
+
   bfi <- sum(Q2) / (sum(Q1) + sum(Q2)) * 100
   df <- data.frame(
     date = rep(dates, 2),
@@ -181,8 +181,8 @@ plot_components <- function(dates, sim) {
                   x = NULL, y = sprintf("Q (%s)", unit)) +
     theme_hydro()
 }
- 
- 
+
+
 #' Plot Tank Storage Dynamics
 #'
 #' @param dates Date vector.
@@ -204,8 +204,8 @@ plot_storage <- function(dates, sim) {
                   x = NULL, y = "Storage (mm)") +
     theme_hydro()
 }
- 
- 
+
+
 #' Plot Dotty Plots for Parameter Identifiability
 #'
 #' @param cal_result List. Output from \code{\link{calibrate_montecarlo}}.
@@ -215,7 +215,8 @@ plot_storage <- function(dates, sim) {
 plot_dotty <- function(cal_result, nse_threshold = 0.5) {
   s <- cal_result$samples
   has_k4 <- "k4" %in% names(s) && any(s$k4 > 0)
- 
+  has_b1 <- "b1" %in% names(s) && any(s$b1 != 1)
+
   mc_long <- rbind(
     data.frame(Parameter = "k1 (surface runoff)", Value = s$k1, NSE = s$NSE),
     data.frame(Parameter = "k2 (percolation)",    Value = s$k2, NSE = s$NSE),
@@ -225,7 +226,11 @@ plot_dotty <- function(cal_result, nse_threshold = 0.5) {
     mc_long <- rbind(mc_long,
       data.frame(Parameter = "k4 (ET)", Value = s$k4, NSE = s$NSE))
   }
- 
+  if (has_b1) {
+    mc_long <- rbind(mc_long,
+      data.frame(Parameter = "b1 (nonlinear exp.)", Value = s$b1, NSE = s$NSE))
+  }
+
   ggplot2::ggplot(mc_long, ggplot2::aes(Value, NSE)) +
     ggplot2::geom_point(alpha = 0.15, size = 0.6, colour = "grey40") +
     ggplot2::geom_hline(yintercept = nse_threshold,
@@ -238,8 +243,8 @@ plot_dotty <- function(cal_result, nse_threshold = 0.5) {
     ) +
     theme_hydro()
 }
- 
- 
+
+
 #' Plot NSE Distribution Histogram
 #'
 #' @param cal_result List. Output from \code{\link{calibrate_montecarlo}}.
@@ -263,8 +268,8 @@ plot_nse_histogram <- function(cal_result, nse_threshold = 0.5) {
     ) +
     theme_hydro()
 }
- 
- 
+
+
 #' Plot Parameter Correlation (Behavioural Sets)
 #'
 #' @param uncertainty List. Output from \code{\link{extract_uncertainty}}.
@@ -287,8 +292,8 @@ plot_param_correlation <- function(uncertainty, x_param = "k1", y_param = "k2") 
     ) +
     theme_hydro()
 }
- 
- 
+
+
 #' Plot Flow Duration Curve
 #'
 #' @param Q_obs Numeric vector. Observed discharge.
@@ -299,12 +304,12 @@ plot_flow_duration <- function(Q_obs, sim) {
   use_m3s <- "Q_total_m3s" %in% names(sim)
   Q_sim   <- if (use_m3s) sim$Q_total_m3s else sim$Q_total
   unit    <- if (use_m3s) "m³/s" else "mm/day"
- 
+
   n <- length(Q_obs)
   fdc_obs <- sort(Q_obs, decreasing = TRUE)
   fdc_sim <- sort(Q_sim, decreasing = TRUE)
   exceed  <- (1:n) / n * 100
- 
+
   df <- data.frame(
     Exceedance = rep(exceed, 2),
     Q      = c(fdc_obs, fdc_sim),
@@ -320,8 +325,8 @@ plot_flow_duration <- function(Q_obs, sim) {
                   y = sprintf("Q (%s, log scale)", unit)) +
     theme_hydro()
 }
- 
- 
+
+
 #' Generate All Plots and Save to PDF
 #'
 #' Creates a multi-page PDF with all diagnostic plots and also
@@ -339,11 +344,13 @@ plot_flow_duration <- function(Q_obs, sim) {
 #' @export
 plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
                      output_dir = ".", prefix = "twotank") {
- 
+
   sim <- cal_result$best_sim
   has_k4 <- "k4" %in% names(uncertainty$behavioural) &&
             any(uncertainty$behavioural$k4 > 0)
- 
+  has_b1 <- "b1" %in% names(uncertainty$behavioural) &&
+            any(uncertainty$behavioural$b1 != 1)
+
   p1  <- plot_rainfall(dates, precip)
   p2  <- plot_uncertainty_envelope(dates, Q_obs, sim, uncertainty)
   p3  <- plot_hydrograph(dates, Q_obs, sim)
@@ -356,29 +363,32 @@ plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
   p10 <- plot_param_correlation(uncertainty, "k1", "k3")
   p11 <- plot_param_correlation(uncertainty, "k2", "k3")
   p12 <- plot_flow_duration(Q_obs, sim)
- 
-  # Extra k4 correlation plots if ET is enabled
+
+  # Extra k4 correlation plots
   if (has_k4) {
-    p13 <- plot_param_correlation(uncertainty, "k1", "k4")
-    p14 <- plot_param_correlation(uncertainty, "k2", "k4")
-    p15 <- plot_param_correlation(uncertainty, "k3", "k4")
+    p_k1k4 <- plot_param_correlation(uncertainty, "k1", "k4")
+    p_k2k4 <- plot_param_correlation(uncertainty, "k2", "k4")
+    p_k3k4 <- plot_param_correlation(uncertainty, "k3", "k4")
   }
- 
+  # Extra b1 correlation plots
+  if (has_b1) {
+    p_k1b1 <- plot_param_correlation(uncertainty, "k1", "b1")
+    p_k2b1 <- plot_param_correlation(uncertainty, "k2", "b1")
+    if (has_k4) p_k4b1 <- plot_param_correlation(uncertainty, "k4", "b1")
+  }
+
   # Save combined PDF
   pdf_path <- file.path(output_dir, paste0(prefix, "_results.pdf"))
-  pdf_height <- if (has_k4) 32 else 28
+  n_extra <- as.integer(has_k4) + as.integer(has_b1)
+  pdf_height <- 28 + n_extra * 2
   grDevices::pdf(pdf_path, width = 12, height = pdf_height)
-  if (has_k4) {
-    gridExtra::grid.arrange(p1, p2, p3, p4, p5, p6, p7, p8, p12,
-                             ncol = 1,
-                             heights = c(0.7, 1.2, 1, 1, 1, 1, 1.3, 0.8, 1))
-  } else {
-    gridExtra::grid.arrange(p1, p2, p3, p4, p5, p6, p7, p8, p12,
-                             ncol = 1,
-                             heights = c(0.7, 1.2, 1, 1, 1, 1, 1, 0.8, 1))
-  }
+  gridExtra::grid.arrange(p1, p2, p3, p4, p5, p6, p7, p8, p12,
+                           ncol = 1,
+                           heights = c(0.7, 1.2, 1, 1, 1, 1,
+                                       if (n_extra > 0) 1.5 else 1,
+                                       0.8, 1))
   grDevices::dev.off()
- 
+
   # Save individual PNGs
   ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_rainfall.png")),
                   p1, width = 12, height = 3, dpi = 150)
@@ -392,7 +402,7 @@ plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
                   p5, width = 12, height = 4, dpi = 150)
   ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_storage.png")),
                   p6, width = 12, height = 4, dpi = 150)
-  dotty_h <- if (has_k4) 7 else 5
+  dotty_h <- 5 + n_extra * 1.5
   ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_dotty.png")),
                   p7, width = 12, height = dotty_h, dpi = 150)
   ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_nse_hist.png")),
@@ -407,25 +417,41 @@ plot_all <- function(dates, precip, Q_obs, cal_result, uncertainty,
                   p12, width = 10, height = 5, dpi = 150)
   if (has_k4) {
     ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_corr_k1k4.png")),
-                    p13, width = 7, height = 6, dpi = 150)
+                    p_k1k4, width = 7, height = 6, dpi = 150)
     ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_corr_k2k4.png")),
-                    p14, width = 7, height = 6, dpi = 150)
+                    p_k2k4, width = 7, height = 6, dpi = 150)
     ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_corr_k3k4.png")),
-                    p15, width = 7, height = 6, dpi = 150)
+                    p_k3k4, width = 7, height = 6, dpi = 150)
   }
- 
-  n_plots <- if (has_k4) 15 else 12
+  if (has_b1) {
+    ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_corr_k1b1.png")),
+                    p_k1b1, width = 7, height = 6, dpi = 150)
+    ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_corr_k2b1.png")),
+                    p_k2b1, width = 7, height = 6, dpi = 150)
+    if (has_k4) {
+      ggplot2::ggsave(file.path(output_dir, paste0(prefix, "_corr_k4b1.png")),
+                      p_k4b1, width = 7, height = 6, dpi = 150)
+    }
+  }
+
+  n_plots <- 12 + (if (has_k4) 3 else 0) + (if (has_b1) 2 else 0) +
+             (if (has_k4 && has_b1) 1 else 0)
   cat(sprintf("  Saved: %s + %d PNGs in %s\n", basename(pdf_path), n_plots, output_dir))
- 
+
   out_list <- list(rainfall = p1, envelope = p2, hydrograph = p3,
                    scatter = p4, components = p5, storage = p6,
                    dotty = p7, nse_hist = p8,
                    corr_k1k2 = p9, corr_k1k3 = p10, corr_k2k3 = p11,
                    fdc = p12)
   if (has_k4) {
-    out_list$corr_k1k4 <- p13
-    out_list$corr_k2k4 <- p14
-    out_list$corr_k3k4 <- p15
+    out_list$corr_k1k4 <- p_k1k4
+    out_list$corr_k2k4 <- p_k2k4
+    out_list$corr_k3k4 <- p_k3k4
+  }
+  if (has_b1) {
+    out_list$corr_k1b1 <- p_k1b1
+    out_list$corr_k2b1 <- p_k2b1
+    if (has_k4) out_list$corr_k4b1 <- p_k4b1
   }
   invisible(out_list)
 }

@@ -1,8 +1,8 @@
 #' @title Run the Complete TwoTankModel Pipeline
 #' @description Single entry-point function that runs the whole workflow
 #'   from a config file.
- 
- 
+
+
 #' Run the Full Model Pipeline from a Config File
 #'
 #' Reads a config.R file, loads data, calibrates the model, runs
@@ -29,17 +29,17 @@
 #'
 #' @export
 run_model <- function(config_file = "config.R") {
- 
+
   # ── Check config exists ──
   if (!file.exists(config_file)) {
     stop("\n  Config file not found: ", config_file,
          "\n  Create one using: create_config_template()\n")
   }
- 
+
   # ── Source config into a new environment ──
   cfg <- new.env()
   source(config_file, local = cfg)
- 
+
   # ── Validate required settings ──
   required <- c("RAINFALL_FILE", "DISCHARGE_FILE", "DISCHARGE_UNITS",
                 "N_MC_SAMPLES", "K1_BOUNDS", "K2_BOUNDS", "K3_BOUNDS",
@@ -47,7 +47,7 @@ run_model <- function(config_file = "config.R") {
   missing_settings <- setdiff(required, ls(cfg))
   if (length(missing_settings) > 0)
     stop("Missing config values: ", paste(missing_settings, collapse = ", "))
- 
+
   # ── Defaults for optional settings ──
   if (!exists("CATCHMENT_AREA_KM2", envir = cfg))  cfg$CATCHMENT_AREA_KM2  <- NULL
   if (!exists("RUN_SENSITIVITY",    envir = cfg))  cfg$RUN_SENSITIVITY    <- TRUE
@@ -57,17 +57,18 @@ run_model <- function(config_file = "config.R") {
   if (!exists("SAVE_PARAMETERS",    envir = cfg))  cfg$SAVE_PARAMETERS    <- TRUE
   if (!exists("SAVE_CONFIG_COPY",   envir = cfg))  cfg$SAVE_CONFIG_COPY   <- TRUE
   if (!exists("K4_BOUNDS",          envir = cfg))  cfg$K4_BOUNDS          <- c(0, 0)
+  if (!exists("B1_BOUNDS",          envir = cfg))  cfg$B1_BOUNDS          <- c(1, 1)
   if (!exists("DATE_FORMAT",        envir = cfg))  cfg$DATE_FORMAT        <- "auto"
   if (!exists("RANDOM_SEED",        envir = cfg))  cfg$RANDOM_SEED        <- 42
   if (!exists("VERBOSE",            envir = cfg))  cfg$VERBOSE            <- TRUE
- 
+
   # ── Banner ──
   cat("\n")
   cat("  ██████████████████████████████████████████████████████████████\n")
   cat(sprintf("  █    TWO-TANK MODEL — RUN: %-32s █\n", cfg$RUN_NAME))
   cat(sprintf("  █    Config file: %-42s █\n", config_file))
   cat("  ██████████████████████████████████████████████████████████████\n\n")
- 
+
   # ── Step 1: Results folder ──
   cat("━━━ STEP 1: Creating results folder ━━━\n")
   run_dir  <- create_run_folder(cfg$RESULTS_DIR, cfg$RUN_NAME)
@@ -77,7 +78,7 @@ run_model <- function(config_file = "config.R") {
     file.copy(config_file, file.path(run_dir, "config_used.R"), overwrite = TRUE)
     cat("  ✓ config_used.R saved\n\n")
   }
- 
+
   # ── Step 2: Load data ──
   cat("━━━ STEP 2: Loading data ━━━\n")
   data <- load_data(
@@ -87,7 +88,7 @@ run_model <- function(config_file = "config.R") {
     area_km2        = cfg$CATCHMENT_AREA_KM2,
     date_format     = cfg$DATE_FORMAT
   )
- 
+
   # ── Step 3: Calibration ──
   cat("━━━ STEP 3: Calibration ━━━\n")
   cal <- calibrate_montecarlo(
@@ -99,12 +100,13 @@ run_model <- function(config_file = "config.R") {
     k2_range   = cfg$K2_BOUNDS,
     k3_range   = cfg$K3_BOUNDS,
     k4_range   = cfg$K4_BOUNDS,
+    b1_range   = cfg$B1_BOUNDS,
     area_km2   = cfg$CATCHMENT_AREA_KM2,
     objective  = cfg$OBJECTIVE,
     seed       = cfg$RANDOM_SEED,
     verbose    = cfg$VERBOSE
   )
- 
+
   # ── Step 4: Uncertainty ──
   cat("━━━ STEP 4: Uncertainty analysis ━━━\n")
   unc <- extract_uncertainty(
@@ -115,7 +117,7 @@ run_model <- function(config_file = "config.R") {
     nse_threshold = cfg$NSE_THRESHOLD,
     verbose       = cfg$VERBOSE
   )
- 
+
   # ── Step 5: Sensitivity ──
   sens <- NULL
   if (cfg$RUN_SENSITIVITY) {
@@ -130,7 +132,7 @@ run_model <- function(config_file = "config.R") {
       verbose     = cfg$VERBOSE
     )
   }
- 
+
   # ── Step 6: Performance ──
   cat("━━━ STEP 6: Performance metrics ━━━\n")
   Q_sim_cmp <- if (!is.null(cfg$CATCHMENT_AREA_KM2)) cal$best_sim$Q_total_m3s
@@ -138,7 +140,7 @@ run_model <- function(config_file = "config.R") {
   metrics <- calc_all_metrics(data$Q_obs, Q_sim_cmp)
   units_str <- if (!is.null(cfg$CATCHMENT_AREA_KM2)) "m3s" else "mm"
   print_model_summary(cal$best_sim, label = "Calibrated Model", units = units_str)
- 
+
   # ── Step 7: Hydrograph metrics & monthly balance ──
   cat("━━━ STEP 7: Hydrograph & monthly analysis ━━━\n")
   hydro_met <- extract_metrics(cal$best_sim, data$dates,
@@ -146,18 +148,18 @@ run_model <- function(config_file = "config.R") {
   mon <- monthly_summary(cal$best_sim, data$dates)
   if (cfg$SAVE_CSV_RESULTS)
     write.csv(mon, file.path(csv_dir, "monthly_summary.csv"), row.names = FALSE)
- 
+
   # ── Step 8: Mass balance ──
   cat("━━━ STEP 8: Mass balance check ━━━\n")
   mb <- check_mass_balance(cal$best_sim)
- 
+
   # ── Step 9: Plots ──
   if (cfg$SAVE_PLOTS) {
     cat("━━━ STEP 9: Generating plots ━━━\n")
     plots <- plot_all(data$dates, data$precip, data$Q_obs, cal, unc,
                       output_dir = plot_dir, prefix = cfg$RUN_NAME)
   }
- 
+
   # ── Step 10: Save ──
   cat("━━━ STEP 10: Saving results ━━━\n")
   if (cfg$SAVE_CSV_RESULTS) {
@@ -168,7 +170,7 @@ run_model <- function(config_file = "config.R") {
   }
   if (cfg$SAVE_PARAMETERS)
     save_parameters(cal, file.path(run_dir, "parameters.txt"))
- 
+
   # ── Done ──
   cat("\n")
   cat("  ██████████████████████████████████████████████████████████████\n")
@@ -177,12 +179,12 @@ run_model <- function(config_file = "config.R") {
   cat(sprintf("  █    Results: %-46s █\n", run_dir))
   cat("  █                                                            █\n")
   cat("  ██████████████████████████████████████████████████████████████\n\n")
- 
+
   invisible(list(cal = cal, unc = unc, sens = sens,
                  metrics = metrics, run_dir = run_dir))
 }
- 
- 
+
+
 #' Create a Config Template in the Current Directory
 #'
 #' Copies a default \code{config.R} template to the working directory
@@ -195,7 +197,7 @@ run_model <- function(config_file = "config.R") {
 create_config_template <- function(path = "config.R", overwrite = FALSE) {
   if (file.exists(path) && !overwrite)
     stop(path, " already exists. Use overwrite = TRUE to replace it.")
- 
+
   # Try to find shipped template first
   shipped <- system.file("config_template.R", package = "TwoTankModel")
   if (nzchar(shipped) && file.exists(shipped)) {
@@ -207,35 +209,36 @@ create_config_template <- function(path = "config.R", overwrite = FALSE) {
   cat("  ✓ Config template created: ", path, "\n", sep = "")
   cat("  Edit it, then run: TwoTankModel::run_model('", path, "')\n", sep = "")
 }
- 
- 
+
+
 # ── Embedded config template (used if installed package copy not found) ─────
 config_template_text <- function() {
 '################################################################################
 #  CONFIG.R — TwoTankModel Configuration
 #  Edit this file, then run:  Rscript -e \'TwoTankModel::run_model("config.R")\'
 ################################################################################
- 
+
 # ── Input data ──
 RAINFALL_FILE      <- "data/rainfall.csv"      # columns: date, P
 DISCHARGE_FILE     <- "data/discharge.csv"     # columns: date, Q
 DISCHARGE_UNITS    <- "m3s"                    # "m3s" or "mm_day"
 CATCHMENT_AREA_KM2 <- 150                      # required if m3s
 DATE_FORMAT        <- "auto"                   # or e.g. "%m/%d/%Y", "%Y-%m-%d"
- 
+
 # ── Calibration ──
 N_MC_SAMPLES       <- 5000                     # 1000 quick, 5000 standard
 K1_BOUNDS          <- c(0.01, 0.80)            # surface runoff coef
 K2_BOUNDS          <- c(0.01, 0.50)            # percolation coef
 K3_BOUNDS          <- c(0.001, 0.15)           # baseflow coef
 K4_BOUNDS          <- c(0, 0.10)               # ET coef (set c(0,0) to disable)
+B1_BOUNDS          <- c(1, 1)                  # nonlinear exponent (set c(1.5,3) to enable)
 NSE_THRESHOLD      <- 0.5                      # for behavioural sets
 OBJECTIVE          <- "NSE"                    # "NSE", "KGE", "LogNSE"
- 
+
 # ── Sensitivity ──
 RUN_SENSITIVITY    <- TRUE
 SENSITIVITY_PERTURB <- 0.20                    # ±20%
- 
+
 # ── Output ──
 RUN_NAME           <- "run_01"
 RESULTS_DIR        <- "results"
@@ -243,7 +246,7 @@ SAVE_PLOTS         <- TRUE
 SAVE_CSV_RESULTS   <- TRUE
 SAVE_PARAMETERS    <- TRUE
 SAVE_CONFIG_COPY   <- TRUE
- 
+
 # ── Advanced ──
 RANDOM_SEED        <- 42
 VERBOSE            <- TRUE

@@ -55,6 +55,11 @@ K2_BOUNDS <- c(0.01, 0.50)     # Percolation coefficient
 K3_BOUNDS <- c(0.001, 0.15)    # Baseflow coefficient
 
 K4_BOUNDS <- c(0.001, 0.15)    # ET coefficient
+# Nonlinear surface runoff exponent
+#   Q1 = k1 * S1^b1
+#   B1_BOUNDS <- c(1, 1)       # linear mode (default)
+#   B1_BOUNDS <- c(1.0, 3.0)   # nonlinear mode (sharper peaks)
+B1_BOUNDS <- c(1.0, 3.0)
 # Threshold for behavioural (acceptable) parameter sets
 #   Standard: NSE >= 0.5
 NSE_THRESHOLD <- 0.5
