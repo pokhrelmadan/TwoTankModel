@@ -29,7 +29,7 @@ cd /path/to/my_project
  
 # First time — create config and put data in data/ folder
 Rscript -e 'TwoTankModel::create_config_template()'
-nano config.R
+vi config.R
  
 # Run the model
 Rscript -e 'TwoTankModel::run_model("config.R")'
